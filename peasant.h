@@ -3,15 +3,20 @@
 
 #include "Iunit.h"
 
-
 /*class that defines units "peasants"*/
 
-class peasant:Iunit
+class peasant: public Iunit
 {
 	public:
 	peasant();
 	peasant(int _x, int _y);
-	build(int _x, int _y, Ibuilding* build);
+	//void mine_ore();
+	//void mine_tree();
+	//void mine_food();
+	
+	void SetLife(int _life);
+	
+	void nextStep();
 };
 
 

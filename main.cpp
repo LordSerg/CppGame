@@ -5,35 +5,52 @@
 
 class A
 {
-protected:
-	int x = 0;
-public:
-	A(){}
+	int max=0;
+	public:
+	void setMax(int newMax)
+	{
+		max=newMax;
+		std::cout<<"set new Max\n";
+	}
+	int getMax()
+	{
+		std::cout<<"max = "<<max<<"\n";
+		return max;
+	}
 };
 
-class B : public A
-{
-	public:
-	B(){}
-	int getX(){ return x; }
-	void setX(){x = 1;}
-};
+class B: public A
+{};
 
 int main()
 {
-	//A*a;
-	//std::cout<<"a: w="<<a->w<<", h="<<a->h<<"\n";
-	B b;//=new B(5,5);
-	
-	std::cout<<"getX = "<<b.getX()<<"\n";
-	b.setX();
-	std::cout<<"getX after setX = "<<b.getX()<<"\n";
-	//std::cout<<"b: w="<<b->w<<", h="<<b->h<<"\n";
-	
 	/*
-	game *x = new game();
-	x->addUnit(new warior(5,5));
-	x->selectUnit(5,5);
-	//x->goTo(3,3);//?
+	A* a = new A();
+	a->setMax(10);
+	a->getMax();
+	
+	A* b=new B();
+	b->setMax(20);
+	b->getMax();
+	
+	B* c=new B();
+	c->setMax(30);
+	c->getMax();
 	*/
+	
+	
+	game *g = new game("path_to_game.mygame");
+	bool is_stop=false;
+	g->addUnit(new peasant(5,5));
+	g->selectUnit(5,5);
+	g->build(new garden(8,8));
+	while(!is_stop)
+	{
+		g->nextStep();
+		g->show();
+	}
+	//x->goTo(3,3);//?
+	
+	
+	
 }
