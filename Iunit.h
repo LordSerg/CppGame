@@ -10,9 +10,6 @@ class Iunit
 	int X, Y; // current coordinates of the unit un the map
 	int lifeCurrent, lifeMax; // current num of life and maximal amount of life of unit
 	
-	//for pathfinding
-	map& m;
-	
 	int color;//to which of the cities this unit belongs
 	
 	static long long int ID = 0;//every unit has its id

@@ -12,12 +12,14 @@
 //#include "BuildingEnum.h"
 #include <tuple>
 #include <bits/stdc++.h>
+
+/*is for everyting that a gamer has*/
 class Game
 {
 	
 	/*in-game staff*/
-	map *m; 
-	std::vector<*Iunit> units; 
+	static map *m;
+	std::vector<*Iunit> units;
 	std::vector<*Iunit> selectedUnits;
 	std::vector<*Ibuilding> building;
 	std::vector<*Ibuilding> selectedBuilding;
@@ -53,7 +55,7 @@ private:
 	
 public:
 	/*build something*/
-	void build(int _x, int _y, Ibuilding* building);
+	void build(Ibuilding* building);
 	void mine(int _x, int _y);
 	
 	/*to play a game - you have to select a game*/
