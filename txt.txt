@@ -1,3 +1,4 @@
+/*
 тільки 2 види юнітів - "військові" та "селяни".
 Військові - більш швидкі та сильні юніти.
 Селяни - вміють будувати споруди та добувати ресурси.
@@ -31,15 +32,172 @@
 Всього у грі три види ресурсів - Деревина, Залізо та Їжа
 
 З початку у гравця є лише один селянин, небагато ресурсів та може побудувати лише склад, хату, шахту, хатку відьми та тартак. З часом він будує все більше будівель, населення зростає. Головна задача - знищити ворога. 
-
-
-/*
-Доброго вечора!
-Хочу тобі прозвітувати про перший тиждень у області великого проекта. Надсилаю header-файли із основною структурою проекту і файл main.cpp, де наведено приклад головного циклу гри.
-
-Щоправда, є кілька питань з приводу класів "task" та "AI":
-- клас task має відповідати за те, чим наразі зайнятий юніт: чи він йде кудись, чи щось будує, чи щось добуває... Питання в тому, як дескретизувати дії цього юніта так, щоб при кожному виклику функції "nextStep()" юніт продовжував робити, те що має, а не починав цю дію робити з початку кожен раз?
-- клас AI має відповідати за штучний інтелект ігрового (комп'ютерного) суперника. На даному етапі я не маю уявлення як реалізувати, або з якого боку розв'язати цю задачу. Може існує якийсь гайд, або приклад, як влаштований такий клас на архітектурному рівні.
-
-Що ти думаєш про це? може якісь поради, або зауваження?
 */
+
+
+we have:
+game
+{
+//has all player units
+std::vector<Iunit> units;
+
+//has ref to the map
+map &m;
+
+//can select units
+void select(x, y);
+
+//can give selected units a task
+build();
+go();
+fight();
+mine();
+
+//can do one step
+void nextStep();
+
+//
+vector<task> tasks;
+
+}
+
+//тобто в середені класу game є task;
+//у task ми передаємо референс на юніта, над яким виконується таска і таска робить із ним все, що треба;
+//у task є референс на мапу для пошуку шляху
+
+//хоча, таке враження, що треба зробити мапу загальнодоступною для кожного класу.
+
+task
+{
+stack<int> curTask;
+int stage=0;
+task(int newTask)
+{
+	curTask.push(newTask);
+}
+
+setTask(Iunit &u)
+{
+	myUnit=u;
+}
+
+Iunit& myUnit;
+
+doTask()
+{
+	if(curTask.top()==0)
+	{
+		curTask.pop();
+	}
+	else if(curTask.top()==1)
+	{
+		Go()
+	}
+}
+
+int x,y;//tmp vars
+Go(Iunit& unit, int x1, int y1)
+{
+	if(stage=10)
+	{
+		stage = 0;
+		path = m->findPath(unit.x, unit.y, x1, y1);
+		unit->move(path[0].x,path[0].y);
+		x = path[0].x;
+		y = path[0].y;
+	}
+	else
+	{
+		unit->move(x, y);
+		++stage;
+	}
+	//thus the movement will be not imediat from cell to cell - it will be a duration:
+	//for example each 10 main loops unit can move from one cell to another.
+}
+
+Mine(int x0,int y0, int x1, int y1, Iunit unit)
+{
+	//stage==0 is for idle
+	if(stage==1)
+	{
+		if(unit.getX()==x0&&unit.getY()==y0)
+		{
+			stage=2;
+		}
+		else
+		{
+			m->findPath(unit.getX(), unit.getY(), x0, y0);
+			
+		}
+	}
+	if(stage==2)
+	{
+		//???
+		//check is there any resources in there
+	}
+	if(stage==3)
+	{
+		//???
+		//mine the ore/tree/food
+	}
+	if(stage==4)
+	{
+		if(unit.getX()==x1&&unit.getY()==y1)
+		{
+			stage=5;
+		}
+		else
+		{
+			m->findPath(unit.getX(), unit.getY(), x1, y1);
+			return (dx,dy);
+		}
+	}
+	if(stage==5)
+	{
+		//???
+		//check is there any space in storage
+	}
+	if(stage==6)
+	{
+		//???
+		//put the item to the storage
+	}
+}
+
+}
+
+
+Iunit
+{
+//ref for map
+void move()
+{
+
+}
+}
+
+example of calling in main function:
+
+game *g;      //make game
+//...
+g->select();  //selected one unit
+//...
+g->build()    //set to the selected unit what to do
+//...
+
+while(!0)	  //main loop
+{
+	//...
+	g->nextStep();
+}
+
+chain of function calls:
+
+> g->build()
+> g->tasks.push_back(new task(2))//2 is for build
+
+//...
+
+-> g->nextStep()
+-> for(auto t : tasks) t->
+->
