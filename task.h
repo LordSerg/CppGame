@@ -1,13 +1,67 @@
 #ifndef TASK_H
 #define TASK_H
 
+#include <map.h>
+#include <Iunit.h>
+#include <Ibuilding.h>
+
 class task
 {
-	//for pathfinding
-	map& m;
+	/*the unit which is controlled by task*/
+	Iunit& myUnit;
+	std::stack<int> curTask;
+	
+	/*main tasks*/
+	go();
+	mine();
+	fight();
+	
+	/*special task for peasants*/
+	build();
+	
 public:
-	void doTask();
-	void setTask();
+	task(Iunit &u, int newTask);
+	
+	/*when there is already a task for a unit*/
+	void setNewTask(Iunit &u, int newTask);
+	//{
+	//	myUnit=u;
+	//}
+	
+	/*this is called whenever the main loop happens*/
+	void doTask();//p.s. don't foreget to check if unit is dead before every iteration
+	/*
+	{
+		if(curTask.empty()==true)
+		{
+			~task();
+			return;
+		}
+		else if(curTask.top()==0)
+		{
+			curTask.pop();
+		}
+		else if(curTask.top()==1)
+		{
+			go();
+		}
+		else if(curTask.top()==2)
+		{
+			mine();
+		}
+		else if(curTask.top()==3)
+		{
+			fight();
+		}
+		else if(curTask.top()==4)
+		{
+			build();
+		}
+	}
+	*/
+	
+	
+	
 	/*
 	//types of tasks:
 	build(x, y, buiilding, unit)

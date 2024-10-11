@@ -68,7 +68,7 @@ class mine : public Ibuilding
 	mine(int _x, int _y);
 	void nextStep();
 };
-class whichHut : public Ibuilding
+class GuildOfCraftsmen : public Ibuilding
 {//upgrades of existing buildings and researching new ones
 	public:	
 	whichHut(int _x, int _y);

@@ -2,6 +2,16 @@
 
 int main()
 {
+	game::LoadGame("path_to_game.mygame");
+	game::getPlayer().selectUnit(5, 5);
+	game::getPlayer().go(10, 10);
+	while(!0)
+	{
+		game::Step();
+	}
+	
+	game::SaveGame("path_to_game.mygame");
+	/*
 	game *g = new game("path_to_game.mygame");
 	bool is_stop=false;
 	g->addUnit(new peasant(5,5)); //create unit
@@ -12,4 +22,5 @@ int main()
 		g->nextStep();
 		g->show();
 	}
+	*/
 }

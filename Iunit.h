@@ -1,8 +1,6 @@
 #ifndef IUNIT_H
 #define IUNIT_H
 
-#include "task.h"
-
 /*class responsible for units info on the map*/
 class Iunit
 {
@@ -12,7 +10,8 @@ class Iunit
 	
 	int color;//to which of the cities this unit belongs
 	
-	static long long int ID = 0;//every unit has its id
+	/*every unit has its id*/
+	static long long int ID = 0;//ID counter
 	long long int id;//every unit remembers its id
 	
 	int speed; // speed of unit movement on the map
@@ -23,8 +22,8 @@ class Iunit
 	//variable for state
 	int state;
 	
-	/*variable for state*/
-	task *t;
+	/*variable for state and for task class*/
+	bool is_busy;
 
 public:
 	
@@ -52,7 +51,7 @@ public:
 	/*in the main game loop every object in the game will have next step to do*/
 	virtual void nextStep() = 0;
 	
-	/**/
+	/*needed things for the task class*/
 	bool isDead();//check if unit is dead
 	void death();//set boolean "is_dead" to true
 	
@@ -62,6 +61,9 @@ public:
 	
 	/*in the future, when i'll include some graphics engine*/
 	void show();
+	
+	/*for saving*/
+	std::string serialize();
 	
 };
 

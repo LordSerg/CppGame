@@ -6,19 +6,19 @@ enum BuildingType
 {
 	/*main buildings*/
 	
-	Garden,  //поле / огород / сад
-	Storage, //склад
-	Cottage, //хата
-	Mine,    //шахта
-	WhichHut,//хатинка відьми
-	Sawmill, //тартак
+	Garden,  		 //поле / огород / сад
+	Storage, 		 //склад
+	Cottage, 		 //хата
+	Mine,    		 //шахта
+	GuildOfCraftsmen,//гільдія ремісники
+	Sawmill, 		 //тартак
 	
 	/*buildings to be taught*/
 	
-	Forge,   //кузня
-	Barracks,//казарми
-	Road,    //дорога
-	Wall     //стіна
+	Forge,   		 //кузня
+	Barracks,		 //казарми
+	Road,    		 //дорога
+	Wall     		 //стіна
 };
 
 #endif

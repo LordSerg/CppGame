@@ -1,7 +1,11 @@
 #ifndef AI_H
 #define AI_H
 
-class AI
+#include <player.h>
+
+
+/*class for computer opponents*/
+class AI : public player
 {
 	
 };

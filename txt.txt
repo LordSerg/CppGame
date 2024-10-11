@@ -36,13 +36,11 @@
 
 
 we have:
-game
+player
 {
 //has all player units
 std::vector<Iunit> units;
 
-//has ref to the map
-map &m;
 
 //can select units
 void select(x, y);
