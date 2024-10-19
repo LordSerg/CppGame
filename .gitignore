@@ -1,0 +1,4 @@
+*.exe
+
+[Dd]ebug/
+[Bb]uild/
