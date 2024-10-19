@@ -62,8 +62,9 @@ public:
 	/*in the future, when i'll include some graphics engine*/
 	void show();
 	
-	/*for saving*/
-	std::string serialize();
+	/*for saving in file*/
+	std::string Serialize();
+	std::string Deserialize();
 	
 };
 

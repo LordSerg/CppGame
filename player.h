@@ -59,10 +59,9 @@ public:
 	void mine(int _x0, int _y0, int _x1, int _y1);
 	void fight(Iunit &other);
 	
-	/*to play a game - you have to select a game*/
-	void LoadGame(std::string path_to_game); //load saved game from file
-	void SaveGame(std::string path_to_game); //save played game to the file
-	void CreateGame(std::string path_to_map, int userColor); //load new game out of a map
+	/*for saving in file*/
+	std::string Serialize();
+	std::string Deserialize();
 	
 	/*for a game loop*/
 	void nextStep();

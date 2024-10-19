@@ -1,5 +1,5 @@
 #include <iostream>
-
+#include "game.h"
 int main()
 {
 	game::LoadGame("path_to_game.mygame");

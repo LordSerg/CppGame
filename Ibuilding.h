@@ -40,6 +40,10 @@ public:
 	/**/
 	bool isDead();//check if building is destroyed
 	void death();//set boolean "is_dead" to true
+	
+	/*for saving in file*/
+	std::string Serialize();
+	std::string Deserialize();
 };
 
 /*classes to define all buildings*/

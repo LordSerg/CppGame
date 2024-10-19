@@ -1,8 +1,8 @@
 #ifndef GAMEGAME_H
 #define GAMEGAME_H
 
-#include <AI.h>
-//#include <player.h> in AI.h is already included
+#include "AI.h"
+//#include "player.h" in AI.h is already included
 
 
 class game
