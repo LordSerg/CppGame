@@ -1,4 +1,4 @@
 *.exe
-
+.vscode
 [Dd]ebug/
 [Bb]uild/
