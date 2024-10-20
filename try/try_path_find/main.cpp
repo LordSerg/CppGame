@@ -10,6 +10,12 @@
 TODO for future:
 1) check for spawn point of unit (in such way, that the unit couldn't spawn on obstacle)
 2) make a unit to move (using task class)
+3) movig two or more units simultaneously:
+    {
+        a) find path for each unit
+        b) go
+        c) if on the next step there is an unexpected obstacle - find new path
+    }
 */
 
 /*
