@@ -224,6 +224,10 @@ void Map::ShowMap()
                 std::cout<<"X";
             else if(x->getLand()==LandType::unit)
                 std::cout<<"0";
+            else if(x->getLand()==LandType::building)
+                std::cout<<"B";
+            else if(x->getLand()==LandType::mine)
+                std::cout<<"M";
             else
                 std::cout<<"-";
 
@@ -374,11 +378,14 @@ public:
         x=y=0;
         width=height=1;
     }
-    Building(int X, int Y, int size)
+    Building(int X, int Y, int size, Map* map)
     {
         x = X;
         y = Y;
         width = height = size;
+        for(int j=y;j<y+height;++j)
+            for(int i=x;i<x+width;++i)
+                map->SetElem(i,j,LandType::building);
     }
 
     int getX(){return x;}
@@ -392,7 +399,12 @@ class Mine:public Building
 {
 public:
     Mine():Building(){}
-    Mine(int X, int Y, int size):Building{X,Y,size}{}
+    Mine(int X, int Y, int size, Map* map):Building{X,Y,size, map}
+    {
+        for(int j=Y;j<Y+size;++j)
+            for(int i=X;i<X+size;++i)
+                map->SetElem(i,j,LandType::mine);
+    }
 };
 
 class Task
@@ -415,7 +427,8 @@ class Task
         }
         else
         {
-            curTask.pop();
+            if(!curTask.empty())
+                curTask.pop();
         }
     }
 	void mine()
@@ -473,6 +486,10 @@ public:
 			build();
 		}
     }
+    bool isIdle()
+    {
+        return curTask.empty();
+    }
 };
 
 int main()
@@ -489,23 +506,22 @@ int main()
     t2->setNewTask(u2,TaskType::to_go, 22, 8);
     
     //set other things on map
-    //Building*b1 = new Building(7,7,2);
-    //Mine*m1 = new Mine(2,23,3);
+    Building*b1 = new Building(7,7,2,&map);
+    Mine*m1 = new Mine(2,23,3, &map);
     //set task for unit
     
     //main loop emulator
-    while(t1!=nullptr&&t2!=nullptr)
+    int iter=0;
+    while(!t1->isIdle() || !t2->isIdle())
     {
-        if(t1!=nullptr)
-        {
+        if(!t1->isIdle())
             t1->doTask();
-        }
-        if(t2!=nullptr)
-        {
+        if(!t2->isIdle())
             t2->doTask();
-        }
+        std::cout<<(iter++)<<"\n";
         map.ShowMap();
     }
+    system("pause");
 }
 
 
