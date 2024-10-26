@@ -79,6 +79,7 @@ public:
 	TechTree()
 	{
 		//simple tech tree:
+		/*
 		technologies.push_back(new Tech("A"));		//0
 		technologies.push_back(new Tech("B"));		//1
 		technologies.push_back(new Tech("C"));		//2
@@ -109,6 +110,79 @@ public:
 		//Y:
 		technologies[9]->AddRequiredTech(technologies[5]);
 		technologies[9]->AddRequiredTech(technologies[7]);
+		*/
+
+		//tech tree for game
+		technologies.push_back(new Tech("Sawmill"));			//0
+		technologies.push_back(new Tech("Cottage"));			//1
+		technologies.push_back(new Tech("Storage"));			//2
+		technologies.push_back(new Tech("Farm"));				//3
+		technologies.push_back(new Tech("Guild"));				//4
+		technologies.push_back(new Tech("Axes"));				//5
+		technologies.push_back(new Tech("Urban planning"));		//6
+		technologies.push_back(new Tech("Roads"));				//7
+		technologies.push_back(new Tech("Walls"));				//8
+		technologies.push_back(new Tech("Mining"));				//9
+		technologies.push_back(new Tech("Metal processing"));	//10
+		technologies.push_back(new Tech("Mine"));				//11
+		technologies.push_back(new Tech("Pickaxes"));			//12
+		technologies.push_back(new Tech("Military"));			//13
+		technologies.push_back(new Tech("Barracks"));			//14
+		technologies.push_back(new Tech("Training ground"));	//15
+		technologies.push_back(new Tech("Sields1"));			//16
+		technologies.push_back(new Tech("Sields2"));			//17
+		technologies.push_back(new Tech("Sields3"));			//18
+		technologies.push_back(new Tech("Swards1"));			//19
+		technologies.push_back(new Tech("Swards2"));			//20
+		technologies.push_back(new Tech("Swards3"));			//21
+		technologies.push_back(new Tech("Health1"));			//22
+		technologies.push_back(new Tech("Health2"));			//23
+		technologies.push_back(new Tech("Health3"));			//24
+		technologies.push_back(new Tech("Tower"));				//25
+		technologies.push_back(new Tech("Forge"));				//26
+		technologies.push_back(new Tech("Sledgehummers"));		//27
+		technologies.push_back(new Tech("Tools1"));				//28
+		technologies.push_back(new Tech("Tools2"));				//29
+		technologies.push_back(new Tech("Tools3"));				//30
+		
+		//connections:
+
+		technologies[4]->AddRequiredTech(technologies[0]);
+		technologies[4]->AddRequiredTech(technologies[1]);
+		technologies[4]->AddRequiredTech(technologies[2]);
+		technologies[4]->AddRequiredTech(technologies[3]);
+
+		technologies[5]->AddRequiredTech(technologies[0]);
+
+		technologies[6]->AddRequiredTech(technologies[4]);
+		technologies[7]->AddRequiredTech(technologies[6]);
+		technologies[8]->AddRequiredTech(technologies[6]);
+		technologies[9]->AddRequiredTech(technologies[4]);
+		technologies[10]->AddRequiredTech(technologies[9]);
+		technologies[11]->AddRequiredTech(technologies[9]);
+		technologies[12]->AddRequiredTech(technologies[11]);
+		technologies[13]->AddRequiredTech(technologies[4]);
+		technologies[14]->AddRequiredTech(technologies[10]);
+		technologies[14]->AddRequiredTech(technologies[13]);
+		technologies[15]->AddRequiredTech(technologies[14]);
+		technologies[16]->AddRequiredTech(technologies[14]);
+		technologies[17]->AddRequiredTech(technologies[16]);
+		technologies[18]->AddRequiredTech(technologies[17]);
+		technologies[19]->AddRequiredTech(technologies[14]);
+		technologies[20]->AddRequiredTech(technologies[19]);
+		technologies[21]->AddRequiredTech(technologies[20]);
+		technologies[22]->AddRequiredTech(technologies[15]);
+		technologies[23]->AddRequiredTech(technologies[22]);
+		technologies[24]->AddRequiredTech(technologies[23]);
+		technologies[25]->AddRequiredTech(technologies[8]);
+		technologies[25]->AddRequiredTech(technologies[13]);
+		technologies[26]->AddRequiredTech(technologies[10]);
+		technologies[27]->AddRequiredTech(technologies[26]);
+		technologies[28]->AddRequiredTech(technologies[5]);
+		technologies[28]->AddRequiredTech(technologies[12]);
+		technologies[28]->AddRequiredTech(technologies[27]);
+		technologies[29]->AddRequiredTech(technologies[28]);
+		technologies[30]->AddRequiredTech(technologies[29]);
 
 	}
 
