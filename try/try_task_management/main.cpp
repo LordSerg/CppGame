@@ -21,7 +21,6 @@ enum LandType
     building,
     mine
 };
-
 class Cell
 {
     LandType land = none;
@@ -59,6 +58,7 @@ public:
     int getWidth();
     int getHeight();
     std::vector<Cell*> FindPath(int Xfrom, int Yfrom, int Xto, int Yto);
+    LandType getElemType(int X, int Y);
 };
 
 class Unit
@@ -75,7 +75,7 @@ public:
     int Y();
     void goTo(int newTargetX, int newTargetY);
     void ShowPath();
-    void SetLocation(int newX, int newY);
+    void SetLocation(int newX, int newY, LandType);
     //std::vector<Cell*> GetPath();
 };
 
@@ -312,6 +312,11 @@ std::vector<Cell*> Map::FindPath(int Xfrom, int Yfrom, int Xto, int Yto)
     return answer;
 }
 
+LandType Map::getElemType(int X, int Y)
+{
+    return map[Y][X]->getLand();
+}
+
 void Unit::findPath()
 {
     if(targetX==x&&targetY==y)
@@ -349,16 +354,22 @@ void Unit::ShowPath()
     std::cout<<"("<<path[path.size()-1]->getX()<<", "<<path[path.size()-1]->getY()<<")\n";
 
 }
-void Unit::SetLocation(int newX, int newY)
+void Unit::SetLocation(int newX, int newY, LandType prev=LandType::none)
 {
     //removing us from map on the one place
-    theMap->SetElem(x,y,LandType::none);
+    theMap->SetElem(x,y,prev);
     //...and pasting us on other place
     x=newX;
     y=newY;
     theMap->SetElem(x,y,LandType::unit);
 }
 //----------------------- Task management (new) classes-----------------------
+enum BuildType
+{
+    empty,
+    farm,
+    mine_ore
+};
 enum TaskType
 {
     idle,
@@ -372,17 +383,20 @@ class Building
 {
     int x,y;
     int width, height;
+    BuildType BT;
 public:
     Building()
     {
         x=y=0;
         width=height=1;
+        BT = BuildType::empty;
     }
-    Building(int X, int Y, int size, Map* map)
+    Building(int X, int Y, int size, Map* map, BuildType type = BuildType::mine_ore)
     {
         x = X;
         y = Y;
         width = height = size;
+        BT=type;
         for(int j=y;j<y+height;++j)
             for(int i=x;i<x+width;++i)
                 map->SetElem(i,j,LandType::building);
@@ -390,9 +404,6 @@ public:
 
     int getX(){return x;}
     int getY(){return y;}
-
-
-
 };
 
 class Mine:public Building
@@ -407,15 +418,18 @@ public:
     }
 };
 
+std::vector<Building*> AllBuildings;
+
 class Task
 {
 	Unit* myUnit;
 	std::stack<TaskType> curTask;
     //temporary variables
-    int x, y;
-    Building* b;
+    int x, y, x1, y1;
+    int time = 10;//time for building
+    BuildType bt;
     Unit* otherUnit;
-	
+	Map*theMap;
 	void go()
     {
         if(myUnit->path.size()!=0)
@@ -431,6 +445,110 @@ class Task
                 curTask.pop();
         }
     }
+	void build()
+    {
+
+        if(time>0)
+        {//is building
+            time--;
+            theMap->SetElem(x,y,LandType::obstacle);
+            if(bt==BuildType::empty)
+            {
+                for(int i=x;i<x+2;++i)
+                    for(int j=y;j<y+2;++j)
+                        theMap->SetElem(i,j,LandType::obstacle);
+            }
+            else if(bt==BuildType::farm)
+            {
+                for(int i=x;i<x+2;++i)
+                    for(int j=y;j<y+2;++j)
+                        theMap->SetElem(i,j,LandType::obstacle);
+            }
+        }
+        else if(time <= 0)
+        {//done
+            
+            int buildSize=2;
+
+            Building *b=new Building(x,y,buildSize,theMap);
+            AllBuildings.push_back(b);
+            if(!curTask.empty())
+                curTask.pop();
+            //set unit to the free space nearby Building
+            int newX, newY;
+            int bsX=buildSize+1,bsY=buildSize+1;
+            bsY--;
+            newX = myUnit->X()-1;
+            newY = myUnit->Y();
+            int stat=0;
+            while(theMap->getElemType(newX,newY)!=LandType::none)
+            {
+                //go down
+                while(stat==0)
+                {
+                    bsY--;
+                    if(newY-1>=0)newY--;
+                    if(theMap->getElemType(newX,newY)==LandType::none)
+                        break;
+                    if(bsY==0)
+                    {
+                        bsY=buildSize+1;
+                        stat=1;
+                        break;
+                    }
+                }
+                //go right
+                while(stat==1)
+                {
+                    bsX--;
+                    if(newX+1<theMap->getWidth())newX++;
+                    if(theMap->getElemType(newX,newY)==LandType::none)
+                        break;
+                    if(bsX==0)
+                    {
+                        bsX=buildSize+1;
+                        stat=2;
+                        break;
+                    }
+                }
+                //go up
+                while(stat==2)
+                {
+                    bsY--;
+                    if(newY+1<theMap->getHeight())newY++;
+                    if(theMap->getElemType(newX,newY)==LandType::none)
+                        break;
+                    if(bsY==0)
+                    {
+                        bsY=buildSize+1;
+                        stat=3;
+                        break;
+                    }
+                }
+                //go left
+                while(stat==3)
+                {
+                    bsX--;
+                    if(newX-1>=0)newX--;
+                    if(theMap->getElemType(newX,newY)==LandType::none)
+                        break;
+                    if(bsX==0)
+                    {
+                        //
+                        buildSize++;
+                        bsX=buildSize+1;
+                        bsY=buildSize+1;
+                        //
+                        bsX--;
+                        newX--;
+                        stat=0;
+                        break;
+                    }
+                }
+            }
+            myUnit->SetLocation(newX, newY,LandType::building);
+        }
+    }
 	void mine()
     {
 
@@ -439,25 +557,43 @@ class Task
     {
 
     }
-	void build()
-    {
-
-    }
 public:
-    Task(){}
-    ~Task(){}
-    void setNewTask(Unit *u, TaskType newTask, int X, int Y)
+    Task(Map* map)
     {
-        //for tasks like "go"
+        theMap = map;
+    }
+    ~Task(){}
+    //X,Y - are upper left corner of the building
+    void SetTaskBuild(Unit *u, int X, int Y, BuildType build)
+    {
+        myUnit=u;
+        //empty stack
+        while(curTask.size()!=0)
+            curTask.pop();
+        curTask.push(TaskType::to_build);
+        curTask.push(TaskType::to_go);
+        x=X;
+        y=Y;
+        bt=build;
+        if(bt==BuildType::empty)
+            time = 10;
+        else if (bt==BuildType::farm)
+            time = 5;
+        myUnit->goTo(x,y);
+    }
+    void SetTaskGo(Unit *u, int X, int Y)
+    {
         myUnit = u;
         //empty stack
         while(curTask.size()!=0)
             curTask.pop();
-        curTask.push(newTask);
+        curTask.push(TaskType::to_go);
         x=X;
         y=Y;
         myUnit->goTo(x,y);
     }
+
+
     void doTask()
     {
         if(curTask.empty()==true)
@@ -499,15 +635,15 @@ int main()
     Unit* u1=new Unit(1,1,&map);
     Unit* u2=new Unit(21,23,&map);
 
-    Task* t1 = new Task();
-    t1->setNewTask(u1,TaskType::to_go, 5, 5);
+    Task* t1 = new Task(&map);
+    t1->SetTaskBuild(u1, 5, 5,BuildType::farm);
+    //Building*b1 = new Building(10,10,2,&map);
     
-    Task* t2 = new Task();
-    t2->setNewTask(u2,TaskType::to_go, 22, 8);
+    Task* t2 = new Task(&map);
+    t2->SetTaskGo(u2,15,15);
     
     //set other things on map
-    Building*b1 = new Building(7,7,2,&map);
-    Mine*m1 = new Mine(2,23,3, &map);
+    //Mine*m1 = new Mine(2,23,3, &map);
     //set task for unit
     
     //main loop emulator
@@ -529,8 +665,8 @@ int main()
 "0" is for units
 "-" is for free space
 "X" is for obstacle
-"A" is for target
-"!" is for path
+"B" is for buildiing
+"M" is for mine
 map:
                        1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2
    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
@@ -541,8 +677,8 @@ map:
 04 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
 05 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
 06 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-07 X - - - - - - B B - - - - - - - - - - - - - - - - - - - - X
-08 X - - - - - - B B - - - - - - - - - - - - - - - - - - - - X
+07 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
+08 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
 09 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
 10 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
 11 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
