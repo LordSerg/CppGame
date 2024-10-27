@@ -451,6 +451,7 @@ class Task
         if(time>0)
         {//is building
             time--;
+            
             theMap->SetElem(x,y,LandType::obstacle);
             if(bt==BuildType::empty)
             {
@@ -630,6 +631,8 @@ public:
 
 int main()
 {
+    //walk and build
+    
     //init of map and units
     Map map = Map();
     Unit* u1=new Unit(1,1,&map);
