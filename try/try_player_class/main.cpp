@@ -4,19 +4,32 @@
 #include <algorithm>
 #include <list>
 #include <math.h>
-#include <chrono>
-#include <thread>
-
 #define NO_STORAGE_SPECIFIED -100
-//every unit can do some tasks, like go to the point, fight, build ect.
-//to manage actions of units and update it on map - use class "task".
-//every unit is connected to its task
-//or rather every task has its unit.
 
-//these things are needed for main game loop.
+/*
+In this piece implemented an combination of these things:
+1. resource management of the player
+2. management of units of the player
+3. all building types
+4. player's tech tree
+*/
 
+//-----------------------stuff that was in "try_path_find" and "try_unit_management"-----------------------
 
-//-----------------------stuff that was in "try_path_find"-----------------------
+enum BuildType
+{
+    empty,
+    farm,
+    mine_ore
+};
+enum TaskType
+{
+    idle,
+    to_go,
+    to_fight,
+    to_build,
+    to_mine
+};
 enum LandType
 {
     none,
@@ -67,20 +80,51 @@ public:
 
 class Unit
 {
-    int x,y;
-    int targetX,targetY;
-    Map *theMap;
-    void findPath();
-public:
+    int x,y;        //unit coordinates on map
+    int x1,y1,x2,y2;//tmp coords    
+    Map *theMap;    //ptr to map
+    void findPath(int targetX, int targetY);
     std::vector<Cell*> path;
+
+public:
     Unit();
     Unit(int X, int Y, Map *map);
     int X();
     int Y();
-    void goTo(int newTargetX, int newTargetY);
+    //void goTo(int newTargetX, int newTargetY);
     void ShowPath();
     void SetLocation(int newX, int newY, LandType);
     //std::vector<Cell*> GetPath();
+
+    //unite "Task" into "Unit"
+private:
+
+    int time = 10;//time for building
+    BuildType bt;
+    std::stack<TaskType> curTask;
+
+    //functions that called from "doTask":
+    void go();
+    void build();
+    void mine();
+    void fight();
+
+public:
+    
+    //function for actions:
+    void doTask();
+    
+    //function setters for tasks:
+    void SetTaskGo(int X, int Y);
+    void SetTaskBuild(int X, int Y, BuildType build);
+    void SetTaskMine(int X_mine, int Y_mine, int X_storage = NO_STORAGE_SPECIFIED, int Y_storage = NO_STORAGE_SPECIFIED);
+    void SetTaskFight(Building* enemyBuilding);
+    void SetTaskFight(Unit* enemy);
+    
+    //
+    bool isIdle();
+public:
+    
 };
 
 Cell::Cell()
@@ -321,7 +365,7 @@ LandType Map::getElemType(int X, int Y)
     return map[Y][X]->getLand();
 }
 
-void Unit::findPath()
+void Unit::findPath(int targetX, int targetY)
 {
     if(targetX==x&&targetY==y)
     {
@@ -332,24 +376,18 @@ void Unit::findPath()
 }
 Unit::Unit()
 {
-    targetX=targetY=x=y=0;
+    x=y=0;
 }
 Unit::Unit(int X, int Y, Map *map)
 {
-    x=targetX=X;
-    y=targetY=Y;
+    x=X;
+    y=Y;
     theMap=map;
     theMap->SetElem(x, y, LandType::unit);
 }
 int Unit::X(){return x;}
 int Unit::Y(){return y;}
 
-void Unit::goTo(int newTargetX, int newTargetY)
-{
-    targetX=newTargetX;
-    targetY=newTargetY;
-    findPath();
-}
 //temporary for console
 void Unit::ShowPath()
 {
@@ -367,21 +405,232 @@ void Unit::SetLocation(int newX, int newY, LandType prev=LandType::none)
     y=newY;
     theMap->SetElem(x,y,LandType::unit);
 }
-//----------------------- Task management (new) classes-----------------------
-enum BuildType
+
+//"task" things:
+void Unit::go()
 {
-    empty,
-    farm,
-    mine_ore
-};
-enum TaskType
+    if(path.size()!=0)
+    {
+        SetLocation(path[0]->getX(), path[0]->getY());
+        delete path[0];
+        //myUnit->path[0]->~Cell();
+        path.erase(path.begin());//remove first elem
+    }
+    else
+    {
+        if(!curTask.empty())
+            curTask.pop();
+    }
+}
+void Unit::build()
 {
-    idle,
-    to_go,
-    to_fight,
-    to_build,
-    to_mine
-};
+
+    if(time>0)
+    {//is building
+        time--;
+        theMap->SetElem(x,y,LandType::obstacle);
+
+        if(bt == BuildType::empty)
+        {
+            for(int i = x; i < x + 2; ++i)
+                for(int j = y; j < y + 2; ++j)
+                    theMap->SetElem(i, j, LandType::obstacle);
+        }
+        else if(bt == BuildType::farm)
+        {
+            for(int i = x; i < x + 2; ++i)
+                for(int j = y; j < y + 2; ++j)
+                    theMap->SetElem(i, j, LandType::obstacle);
+        }
+    }
+    else if(time <= 0)
+    {//done
+        
+        int buildSize=2;
+
+        Building *b=new Building(x,y,buildSize,theMap);
+        allBuildings.push_back(b);// how to push a buildin to the list of all player's buildings?  
+        if(!curTask.empty())
+            curTask.pop();
+        //set unit to the free space nearby Building
+        int newX, newY;
+        int bsX=buildSize+1,bsY=buildSize+1;
+        bsY--;
+        newX = x-1;
+        newY = y;
+        int stat=0;
+        while(theMap->getElemType(newX,newY)!=LandType::none)
+        {
+            //go down
+            while(stat==0)
+            {
+                bsY--;
+                if(newY-1>=0)newY--;
+                if(theMap->getElemType(newX,newY)==LandType::none)
+                    break;
+                if(bsY==0)
+                {
+                    bsY=buildSize+1;
+                    stat=1;
+                    break;
+                }
+            }
+            //go right
+            while(stat==1)
+            {
+                bsX--;
+                if(newX+1<theMap->getWidth())newX++;
+                if(theMap->getElemType(newX,newY)==LandType::none)
+                    break;
+                if(bsX==0)
+                {
+                    bsX=buildSize+1;
+                    stat=2;
+                    break;
+                }
+            }
+            //go up
+            while(stat==2)
+            {
+                bsY--;
+                if(newY+1<theMap->getHeight())newY++;
+                if(theMap->getElemType(newX,newY)==LandType::none)
+                    break;
+                if(bsY==0)
+                {
+                    bsY=buildSize+1;
+                    stat=3;
+                    break;
+                }
+            }
+            //go left
+            while(stat==3)
+            {
+                bsX--;
+                if(newX-1>=0)newX--;
+                if(theMap->getElemType(newX,newY)==LandType::none)
+                    break;
+                if(bsX==0)
+                {
+                    //
+                    buildSize++;
+                    bsX=buildSize+1;
+                    bsY=buildSize+1;
+                    //
+                    bsX--;
+                    newX--;
+                    stat=0;
+                    break;
+                }
+            }
+        }
+        SetLocation(newX, newY,LandType::building);
+    }
+}
+void Unit::mine()
+{
+
+}
+void Unit::fight()
+{
+
+}
+//task setters:
+void Unit::SetTaskGo(int X, int Y)
+{
+    x1=X;
+    y1=Y;
+
+    //empty stack
+    while(curTask.size()!=0)
+        curTask.pop();
+    
+    curTask.push(TaskType::to_go);
+    findPath(x1,y1);
+}
+void Unit::SetTaskBuild(int X, int Y, BuildType build)
+{
+    //empty stack
+    while(curTask.size()!=0)
+        curTask.pop();
+    
+    curTask.push(TaskType::to_build);
+    curTask.push(TaskType::to_go);
+    x1 = X;
+    y1 = Y;
+    bt = build;
+
+    if(bt == BuildType::empty)
+        time = 10;
+    else if (bt == BuildType::farm)
+        time = 5;
+    
+    findPath(x1,y1);
+}
+void Unit::SetTaskMine(int X_mine, int Y_mine, int X_storage = NO_STORAGE_SPECIFIED, int Y_storage = NO_STORAGE_SPECIFIED)
+{
+    x1=X_mine;
+    y1=Y_mine;
+    
+    //in common case there will be no storage specified
+    if(X_storage == NO_STORAGE_SPECIFIED)
+    {
+        //1. find if there is a storage places
+
+        //2. find the nearest of them (by path, not by distance)
+
+        //3. if there is no storage - go to the previous point and break action after picking the resources up)
+        //x1 = myUnit->X();
+        //y1 = myUnit->Y();
+    }
+    else
+    {
+        x2 = X_storage;
+        y2 = Y_storage;
+    }
+
+    //empty stack
+    while(curTask.size()!=0)
+        curTask.pop();
+    
+    curTask.push(TaskType::to_mine);
+}
+
+void Unit::doTask()
+{
+    if(curTask.empty()==true)
+    {
+        return;
+    }
+    else if(curTask.top()==TaskType::idle)
+    {
+        curTask.pop();
+    }
+    else if(curTask.top()==TaskType::to_go)
+    {
+        go();
+    }
+    else if(curTask.top()==TaskType::to_mine)
+    {
+        mine();
+    }
+    else if(curTask.top()==TaskType::to_fight)
+    {
+        fight();
+    }
+    else if(curTask.top()==TaskType::to_build)
+    {
+        build();
+    }
+}
+bool Unit::isIdle()
+{
+    return curTask.empty();
+}
+
+//-----------------------stuff that was in "try_task_management" only-----------------------
+
+
 
 class Building
 {
@@ -422,8 +671,7 @@ public:
     }
 };
 
-std::vector<Building*> AllBuildings;
-
+/*
 class Task
 {
 	Unit* myUnit;
@@ -661,89 +909,66 @@ public:
         return curTask.empty();
     }
 };
+*/
+//-----------------------new stuff-----------------------
+
+//for everything that you can buy exists a price
+class Price
+{
+public:
+    int tree;   //стовбури  //tree
+    int wood;   //деревина  //wood
+    int ore;    //каміння   //ore
+    int metal;  //метал     //metal
+    int food;   //їжа       //food
+
+    Price()
+    {
+        tree = wood = ore = metal = food = 0;
+    }
+
+    Price(int t, int w, int o, int m, int f)
+    {
+        tree = t;
+        wood = w;
+        ore = o;
+        metal = m;
+        food = f;
+    }
+};
+
+class Player
+{
+    //each player has a ptr to map
+    Map* map_ptr;
+
+    //TODO: make smartpointers for units, tasks and buildings
+    
+    //each player has vectors for units:
+    std::vector<Unit*> allUnits;
+    std::vector<Unit*> selectedUnits;
+
+
+    //same with buildings:
+    std::vector<Building*> allBuildings;
+    std::vector<Building*> selectedBuildings;
+
+    //player's resources:
+    Price resources = Price(0,0,0,0,0);//Available
+    
+
+
+    //
+    Player()
+    {
+        
+    }
+
+};
+
 int main()
 {
-    using namespace std::this_thread;     // sleep_for, sleep_until
-    using namespace std::chrono_literals; // ns, us, ms, s, h, etc.
-    using std::chrono::system_clock;
-    //walk and build
-    
-    
-    //Building*b1 = new Building(10,10,2,&map);
-    
-    
-    //set other things on map
-    //Mine*m1 = new Mine(2,23,3, &map);
-    //set task for unit
-    
-    //main loop emulator
-    //init of map and units
     Map map = Map();
-    Unit* u1=new Unit(1,1,&map);
-    Unit* u2=new Unit(21,23,&map);
-    Task* t1 = new Task(&map);
-    Task* t2 = new Task(&map);
-
-    t1->SetTaskBuild(u1, 5, 5, BuildType::farm);
-    t2->SetTaskGo(u2,8,8);
-    int iter=0;
-    system("pause");
-
-    while(!t1->isIdle() || !t2->isIdle())
-    {
-        if(!t1->isIdle())
-            t1->doTask();
-
-        if(!t2->isIdle())
-            t2->doTask();
-
-        std::cout<<(iter++)<<"\n";
-        system("cls");
-        map.ShowMap();
-        sleep_for(500ms);
-    }
-    system("pause");
+    Unit* u1 = new Unit(1,1,&map);
+    u1->doTask();
 }
-
-
-/*
-"0" is for units
-"-" is for free space
-"X" is for obstacle
-"B" is for buildiing
-"M" is for mine
-map:
-                       1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2
-   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
-00 X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X
-01 X 0 - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-02 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-03 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-04 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-05 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-06 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-07 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-08 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-09 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-10 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-11 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-12 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-13 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-14 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-15 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-16 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-17 X - - - - - - - - - - - - - - - - - - - - - - - - - - - - X
-18 X - - - - - - - - - - - - - - - - - - - - - X - - - - - - X
-19 X - - - - - - - - - - - - - - - - - - - - - X - - - - - - X
-20 X - - - - - - - - - - - - - - - - - - - - - X - - - - - - X
-21 X - - - - - - - - - - - - - - - - - - - - - X - - - - - - X
-22 X - - - - - - - - - - - - - - - - - - - X X X - - - - - - X
-23 X - M M M - - - - - - - - - - - - - X - - 0 - - - - - - - X
-24 X - M M M - - - - - - - - - - - - - X - - - - - - - - - - X
-25 X - M M M - - - - - - - - - - - - - X - - - - - - - - - - X
-26 X - - - - - - - - - - - - - - - - - X - - - X X X X - - - X
-27 X - - - - - - - - - - - - - - - - - X - - - - - - X - - - X
-28 X - - - - - - - - - - - - - - - - - X - X X X - - X - - - X
-29 X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X
-
-*/

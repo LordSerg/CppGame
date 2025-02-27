@@ -59,14 +59,16 @@ float nearDist = 0.1f;
 float farDist = 1000.0f;
 float ar = (float)SCR_WIDTH / (float)SCR_HEIGHT;
 
-class LineRenderer {
+class LineRenderer 
+{
     int shaderProgram;
     unsigned int VBO, VAO;
     mat4 viewProjection;
 
     vector<float> vertices;
 public:
-    LineRenderer() {
+    LineRenderer() 
+    {
 
         const char *vertexShaderSource = "#version 330 core\n"
             "layout (location = 0) in vec3 aPos;\n"
@@ -79,7 +81,7 @@ public:
             "out vec4 FragColor;\n"
             "void main()\n"
             "{\n"
-            "   FragColor = vec4(0,0,0,1);\n"
+            "   FragColor = vec4(1,0,0,1);\n"
             "}\n\0";
 
         // vertex shader
@@ -113,17 +115,17 @@ public:
         glLinkProgram(shaderProgram);
         // check for linking errors
         glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-        if (!success) {
+        if (!success) 
+        {
             glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
             cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << endl;
         }
         glDeleteShader(vertexShader);
         glDeleteShader(fragmentShader);
 
-        vector<float> placeHolderVertices = {
-        };
+        vector<float> placeHolderVertices = {};
 
-        vertices.insert( vertices.end(), placeHolderVertices.begin(), placeHolderVertices.end() );
+        vertices.insert( vertices.end(), placeHolderVertices.begin(), placeHolderVertices.end());
         glGenVertexArrays(1, &VAO);
         glGenBuffers(1, &VBO);
         glBindVertexArray(VAO);
@@ -139,11 +141,13 @@ public:
 
     }
 
-    void setCamera(mat4 cameraMatrix) {
+    void setCamera(mat4 cameraMatrix) 
+    {
         viewProjection = cameraMatrix;
     }
 
-    void addLine(vec3 start, vec3 end) {
+    void addLine(vec3 start, vec3 end) 
+    {
         vector<float> lineVertices = {
              start.x, start.y, start.z,
              end.x, end.y, end.z,
@@ -156,7 +160,8 @@ public:
         glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertices.size(), vertices.data(), GL_STATIC_DRAW);
     }
 
-    int draw() {
+    int draw() 
+    {
         glUseProgram(shaderProgram);
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "viewProjection"), 1, GL_FALSE, &viewProjection[0][0]);
 
@@ -168,7 +173,8 @@ public:
 
 // maths functions to pick which grid (not necessary, just for demonstration purposes)
 
-vec3 rayCast(double xpos, double ypos, mat4 projection, mat4 view) {
+vec3 rayCast(double xpos, double ypos, mat4 projection, mat4 view) 
+{
     // converts a position from the 2d xpos, ypos to a normalized 3d direction
     float x = (2.0f * xpos) / SCR_WIDTH - 1.0f;
     float y = 1.0f - (2.0f * ypos) / SCR_HEIGHT;
@@ -188,7 +194,8 @@ vec3 rayCast(double xpos, double ypos, mat4 projection, mat4 view) {
     return ray_wor;
 }
 
-vec3 rayPlaneIntersection(vec3 ray_position, vec3 ray_direction, vec3 plane_normal, vec3 plane_position) {
+vec3 rayPlaneIntersection(vec3 ray_position, vec3 ray_direction, vec3 plane_normal, vec3 plane_position) 
+{
     float d = dot(plane_normal, plane_position - ray_position) / (0.001+dot(ray_direction, plane_normal));
     return ray_position + ray_direction * d;
 }
@@ -212,7 +219,8 @@ vector<T> flatten(const vector<vector<T>> &orig, vec2 bottomLeft=vec2(0,0), vec2
     return ret;
 }   
 
-class QuadRenderer {
+class QuadRenderer 
+{
 
 public:
 
@@ -235,17 +243,19 @@ public:
     vec2 bottomLeft=vec2(0,0);
     vec2 topRight=vec2(GRID_WIDTH, GRID_HEIGHT);
 
-    QuadRenderer() {
-
+    QuadRenderer() 
+    {
         // create an empty grid
         colors.resize(GRID_WIDTH);
-        for (int j = 0; j < GRID_WIDTH; j++) {
+        for (int j = 0; j < GRID_WIDTH; j++) 
+        {
             colors[j].resize(GRID_HEIGHT);
             std::fill(colors[j].begin(),colors[j].end(),vec3(0));
         }
 
         models.resize(GRID_WIDTH);
-        for (int j = 0; j < GRID_WIDTH; j++) {
+        for (int j = 0; j < GRID_WIDTH; j++) 
+        {
             models[j].resize(GRID_HEIGHT);
             std::fill(models[j].begin(),models[j].end(),mat4(0));
         }
@@ -302,21 +312,24 @@ public:
         glLinkProgram(shaderProgram);
         // check for linking errors
         glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-        if (!success) {
+        if (!success) 
+        {
             glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
             cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << endl;
         }
         glDeleteShader(vertexShader);
         glDeleteShader(fragmentShader);
 
-        float vertices[] = {
+        float vertices[] = 
+        {
              1.0f,  1.0f, 0.0f,  // top right
              1.0f,  0.0f, 0.0f,  // bottom right
              0.0f,  0.0f, 0.0f,  // bottom left
              0.0f,  1.0f, 0.0f   // top left 
         };
 
-        unsigned int indices[] = {  // note that we start from 0!
+        unsigned int indices[] = 
+        {  // note that we start from 0!
             0, 1, 3,  // first Triangle
             1, 2, 3   // second Triangle
         };
@@ -381,7 +394,8 @@ public:
         glBindVertexArray(0); 
     }
 
-    void calculateFrustum() {
+    void calculateFrustum() 
+    {
         vec3 rayWorld = rayCast(0, SCR_HEIGHT, projection, view);
         vec3 worldPos = rayPlaneIntersection(cameraPos, rayWorld, vec3(0,0,1), vec3(0,0,0));
         bottomLeft = vec2((int)worldPos.x, (int)worldPos.y);
@@ -392,16 +406,19 @@ public:
     }
 
     // send updated data to GPU
-    void update() {
+    void update() 
+    {
         _models = flatten(models, bottomLeft, topRight);
         _colors = flatten(colors, bottomLeft, topRight);
 
         vector<mat4> shadedCellModels = {};
         vector<vec3> shadedCellColors = {};
 
-        for (int i = 0; i < _models.size(); i++) {
+        for (int i = 0; i < _models.size(); i++) 
+        {
             // only send initialized cells to the GPU
-            if (_models[i] != mat4(0) && _colors[i] != vec3(0)) {
+            if (_models[i] != mat4(0) && _colors[i] != vec3(0)) 
+            {
                 shadedCellModels.push_back(_models[i]);
                 shadedCellColors.push_back(_colors[i]);
             }
@@ -415,24 +432,26 @@ public:
         glBufferSubData(GL_ARRAY_BUFFER, 0, shadedCellColors.size() * sizeof(vec3), &shadedCellColors.front());
     }
 
-    void addQuad(vec2 pos, vec3 col) {
-
+    void addQuad(vec2 pos, vec3 col) 
+    {
         mat4 model = translate(mat4(1.0), vec3(pos, 0.0));
         models[(int)pos.x][(int)pos.y] = model;
         colors[(int)pos.x][(int)pos.y] = col;
     }
 
-    void remove(vec2 pos) {
+    void remove(vec2 pos) 
+    {
         //change color to white
         colors[(int)pos.x][(int)pos.y] = vec3(1);
     }
 
-    void setCamera(mat4 cameraMatrix) {
+    void setCamera(mat4 cameraMatrix) 
+    {
         viewProjection = cameraMatrix;
     }
 
-    void draw() {
-
+    void draw() 
+    {
         glUseProgram(shaderProgram);
         glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "viewProjection"), 1, GL_FALSE, &viewProjection[0][0]);
 
@@ -440,7 +459,6 @@ public:
         glBindVertexArray(VAO);
         glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0, _models.size()); 
         glBindVertexArray(0);
-
     }
 
 };
@@ -449,14 +467,15 @@ vec3 selectedColor = vec3(0,1,0);
 bool leftMouseButtonPressed = false;
 bool rightMouseButtonPressed = false;
 
-class Grid {
+class Grid 
+{
 public:
 
     LineRenderer lines;
     QuadRenderer cells;
 
-    Grid() {
-
+    Grid() 
+    {
         //glLineWidth(2);
 
         // draw horizontal lines of grid
@@ -470,14 +489,17 @@ public:
 
     }
 
-    void addCell(vec2 gridPos, vec3 color, bool updateImmediately=true) {
+    void addCell(vec2 gridPos, vec3 color, bool updateImmediately=true) 
+    {
 
         // ignore mouse clicks outside the grid
-        if (gridPos.x < 0 || gridPos.x > (GRID_WIDTH -1) || gridPos.y < 0 || gridPos.y > (GRID_HEIGHT -1)) {
+        if (gridPos.x < 0 || gridPos.x > (GRID_WIDTH -1) || gridPos.y < 0 || gridPos.y > (GRID_HEIGHT -1)) 
+        {
             return;
         }
         cells.addQuad(gridPos, color);  
-        if (updateImmediately) {
+        if (updateImmediately) 
+        {
             cells.update();
         }
     }
@@ -485,16 +507,19 @@ public:
     void removeCell(vec2 gridPos, bool updateImmediately=true) {
 
         // ignore mouse clicks outside the grid
-        if (gridPos.x < 0 || gridPos.x > (GRID_WIDTH -1) || gridPos.y < 0 || gridPos.y > (GRID_HEIGHT -1)) {
+        if (gridPos.x < 0 || gridPos.x > (GRID_WIDTH -1) || gridPos.y < 0 || gridPos.y > (GRID_HEIGHT -1)) 
+        {
             return;
         }
         cells.remove(gridPos);
-        if (updateImmediately) {
+        if (updateImmediately) 
+        {
             cells.update();
         }
     }
 
-    void draw() {
+    void draw() 
+    {
 
         cells.draw();
         lines.draw(); 
@@ -522,7 +547,7 @@ int main()
 
     //get size and do full screen
     
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    //GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     
 
     GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "try show map", NULL, NULL);
@@ -554,15 +579,19 @@ int main()
         std::cout << "Failed to initialize GLAD" << std::endl;
         return -1;
     }
-
+    
+    //glEnable(GL_MULTISAMPLE);
+    
     //glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     
     //glfwSetWindowContentScaleCallback(window, window_content_scale_callback);
 
     grid = new Grid();
-    for (int i = 0; i < GRID_WIDTH; i++) {
-        for (int j = 0; j < GRID_HEIGHT; j++) {
+    for (int i = 0; i < GRID_WIDTH; i++) 
+    {
+        for (int j = 0; j < GRID_HEIGHT; j++) 
+        {
             // when setting up grid have updateImmediately=false
             // and batch update once at the end
             grid->addCell(vec2(i,j), vec3(1,0,0), false);
@@ -632,7 +661,8 @@ void processInput(GLFWwindow *window)
 
     // ray cast to find quad underneath mouse cursor
 
-    if (leftMouseButtonPressed) {
+    if (leftMouseButtonPressed) 
+    {
         // cast from camera through mouse position
         vec3 rayWorld = rayCast(lastX, lastY, projection, view);
         // check for intersection with grid
@@ -641,8 +671,9 @@ void processInput(GLFWwindow *window)
         vec2 gridPos = vec2((int)worldPos.x, (int)worldPos.y);
 
         grid->addCell(gridPos, selectedColor);
-    } 
-    if (rightMouseButtonPressed) {
+    }  
+    if (rightMouseButtonPressed) 
+    {
 
         // cast from camera through mouse position
         vec3 rayWorld = rayCast(lastX, lastY, projection, view);
@@ -666,17 +697,17 @@ void processInput(GLFWwindow *window)
         selectedColor = vec3(1,0,1);
     if (glfwGetKey(window, GLFW_KEY_6) == GLFW_PRESS)
         selectedColor = vec3(1,1,0);
-    if(glfwGetKey(window, GLFW_KEY_D)||glfwGetKey(window, GLFW_KEY_A)||glfwGetKey(window, GLFW_KEY_W)||glfwGetKey(window, GLFW_KEY_S))
+    if(glfwGetKey(window, GLFW_KEY_D)||glfwGetKey(window, GLFW_KEY_A)||glfwGetKey(window, GLFW_KEY_W)||glfwGetKey(window, GLFW_KEY_S)||
+       glfwGetKey(window, GLFW_KEY_UP)||glfwGetKey(window, GLFW_KEY_DOWN)||glfwGetKey(window, GLFW_KEY_RIGHT)||glfwGetKey(window, GLFW_KEY_LEFT))
     {
-
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-            cameraPos+=vec3(0.01,0,0);
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-            cameraPos-=vec3(0.01,0,0);
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-            cameraPos+=vec3(0,0.01,0);
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-            cameraPos-=vec3(0,0.01,0);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS||glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+            cameraPos+=vec3(std::pow(cameraPos.z,2)*0.001,0,0);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS||glfwGetKey(window, GLFW_KEY_D) == GLFW_KEY_LEFT)
+            cameraPos-=vec3(std::pow(cameraPos.z,2)*0.001,0,0);
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS||glfwGetKey(window, GLFW_KEY_D) == GLFW_KEY_UP)
+            cameraPos+=vec3(0,std::pow(cameraPos.z,2)*0.001,0);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS||glfwGetKey(window, GLFW_KEY_D) == GLFW_KEY_DOWN)
+            cameraPos-=vec3(0,std::pow(cameraPos.z,2)*0.001,0);
         view = lookAt(cameraPos,  cameraPos + cameraFront, vec3(0,1,0));
         grid->cells.setCamera(projection * view);
         grid->lines.setCamera(projection * view);
@@ -722,9 +753,12 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     lastY = ypos;
 
     // switch to update less frequently when many squares on the screen
-    if (cameraPos.z > 15.0f) {
+    if (cameraPos.z > 15.0f) 
+    {
         realTimeUpdating=false;
-    } else {
+    } 
+    else 
+    {
         realTimeUpdating=true;
     }
 
@@ -740,10 +774,14 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
         grid->lines.setCamera(projection * view);
         grid->cells.calculateFrustum();
 
-        if (realTimeUpdating) {
+        if (realTimeUpdating) 
+        {
             grid->cells.update();
         }
-    } else {
+        
+    } 
+    else 
+    {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         firstMouse = true;
     }
@@ -755,30 +793,22 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     cameraPos += (float)yoffset * scrollSpeed * rayCast(lastX, lastY, projection, view);
     // update camera
     view = lookAt(cameraPos,  cameraPos + cameraFront, vec3(0,1,0));
+    if(cameraPos.z<1)
+            cameraPos.z = 1;
+    if(cameraPos.z>50)
+        cameraPos.z = 50;
     grid->cells.setCamera(projection * view);
     grid->lines.setCamera(projection * view);
     grid->cells.calculateFrustum();
     grid->cells.update();
+    std::cout<<"cameraPos.z = "<<cameraPos.z<<"\n";
 }
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
+    leftMouseButtonPressed = (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS);
+    rightMouseButtonPressed = (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS);
 
-    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        leftMouseButtonPressed = true;
-    } else {
-        leftMouseButtonPressed = false;
-    }
-
-    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
-        rightMouseButtonPressed = true;
-    } else {
-        rightMouseButtonPressed = false;
-    }
-
-    if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_RELEASE) {
-        if (!realTimeUpdating) {
-            grid->cells.update();
-        }
-    }
+    if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_RELEASE && !realTimeUpdating)
+        grid->cells.update();
 }

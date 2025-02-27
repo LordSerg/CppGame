@@ -9,5 +9,4 @@ add_subdirectory(lib)
 find_package(OpenGL REQUIRED)
 add_executable(try_show_map main.cpp)
 
-
 target_link_libraries(try_show_map PRIVATE glad glfw glm)
