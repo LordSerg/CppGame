@@ -1,0 +1,96 @@
+Warcraft2Clone/
+├── CMakeLists.txt
+├── assets/
+│   ├── audio/
+│   │   ├── music/
+│   │   │   └── *.ogg
+│   │   └── sfx/
+│   │       └── *.ogg
+│   ├── textures/
+│   │   ├── units/
+│   │   ├── buildings/
+│   │   ├── terrain/
+│   │   └── ui/
+│   └── fonts/
+├── src/
+│   ├── main.cpp+
+│   ├── Core/
+│   │   ├── Game.h+
+│   │   ├── Game.cpp+-
+│   │   ├── GameState.h+
+│   ├── Graphics/
+│   │   ├── Renderer.h+
+│   │   ├── Renderer.cpp+
+│   │   ├── Camera.h+
+│   │   ├── Camera.cpp+
+│   │   ├── Texture.h+
+│   │   ├── Texture.cpp+
+│   │   ├── Sprite.h+
+│   │   └── Sprite.cpp+
+│   ├── UI/
+│   │   ├── MenuSystem.h+
+│   │   ├── MenuSystem.cpp+
+│   │   ├── HUD.h+
+│   │   ├── HUD.cpp+
+│   │   ├── SelectionPanel.h+
+│   │   └── SelectionPanel.cpp+
+│   ├── Map/
+│   │   ├── Map.h+
+│   │   ├── Map.cpp+
+│   │   ├── Tile.h+
+│   │   ├── Tile.cpp+
+│   │   ├── Pathfinding.h+
+│   │   ├── Pathfinding.cpp+
+│   │   ├── FogOfWar.h+
+│   │   └── FogOfWar.cpp+
+│   ├── Entities/
+│   │   ├── Entity.h+
+│   │   ├── Entity.cpp+
+│   │   ├── Unit.h+
+│   │   ├── Unit.cpp+
+│   │   ├── Peasant.h+
+│   │   ├── Peasant.cpp+
+│   │   ├── Fighter.h+
+│   │   ├── Fighter.cpp+
+│   │   ├── Building.h+
+│   │   ├── Building.cpp+
+│   │   ├── Obstacle.h+
+│   │   └── Obstacle.cpp+
+│   ├── Systems/
+│   │   ├── ResourceManager.h+
+│   │   ├── ResourceManager.cpp+
+│   │   ├── TechTree.h+
+│   │   ├── TechTree.cpp+
+│   │   ├── CommandSystem.h+
+│   │   ├── CommandSystem.cpp+
+│   │   ├── SelectionSystem.h+
+│   │   ├── SelectionSystem.cpp+
+│   │   ├── CombatSystem.h+
+│   │   ├── CombatSystem.cpp+
+│   │   └── PopulationSystem.h+
+│   │   └── PopulationSystem.cpp+
+│   ├── AI/
+│   │   ├── AIController.h+
+│   │   ├── AIController.cpp+
+│   │   ├── AIState.h+
+│   │   ├── AIState.cpp+
+│   │   ├── BuildOrder.h+
+│   │   └── BuildOrder.cpp+
+│   ├── Audio/
+│   │   ├── AudioManager.h+
+│   │   └── AudioManager.cpp+
+│   ├── Input/
+│   │   ├── InputHandler.h+
+│   │   └── InputHandler.cpp+
+│   ├── Serialization/
+│   │   ├── SaveSystem.h+
+│   │   └── SaveSystem.cpp+
+│   └── Utils/
+│       ├── Math.h+
+│       ├── Math.cpp-
+│       ├── Timer.h+
+│       └── Timer.cpp+
+├── include/
+│   └── (third-party headers if needed)
+└── saves/
+    └── *.sav
