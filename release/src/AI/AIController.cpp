@@ -575,7 +575,7 @@ std::vector<Unit*> AIController::GetMyUnits(Map* map) {
         if (entity->GetType() == EntityType::UNIT &&
             entity->GetOwnerId() == playerId &&
             entity->IsAlive()) {
-            result.push_back(static_cast<Unit*>(entity.get()));
+            result.push_back(static_cast<Unit*>(entity));
         }
     }
     
@@ -589,7 +589,7 @@ std::vector<Building*> AIController::GetMyBuildings(Map* map) {
         if (entity->GetType() == EntityType::BUILDING &&
             entity->GetOwnerId() == playerId &&
             entity->IsAlive()) {
-            result.push_back(static_cast<Building*>(entity.get()));
+            result.push_back(static_cast<Building*>(entity));
         }
     }
     
@@ -604,7 +604,7 @@ std::vector<Unit*> AIController::GetEnemyUnits(Map* map) {
             entity->GetOwnerId() != playerId &&
             entity->GetOwnerId() != -1 &&
             entity->IsAlive()) {
-            result.push_back(static_cast<Unit*>(entity.get()));
+            result.push_back(static_cast<Unit*>(entity));
         }
     }
     
@@ -619,7 +619,7 @@ std::vector<Building*> AIController::GetEnemyBuildings(Map* map) {
             entity->GetOwnerId() != playerId &&
             entity->GetOwnerId() != -1 &&
             entity->IsAlive()) {
-            result.push_back(static_cast<Building*>(entity.get()));
+            result.push_back(static_cast<Building*>(entity));
         }
     }
     

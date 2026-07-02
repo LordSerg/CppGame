@@ -2,6 +2,7 @@
 #define BUILDING_H
 
 #include "Entity.h"
+#include "Unit.h"
 #include <string>
 #include <vector>
 

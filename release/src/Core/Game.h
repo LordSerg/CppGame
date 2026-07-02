@@ -41,8 +41,6 @@ private:
     GLFWwindow* window;
     bool isRunning;
     float gameSpeed;
-    GameState currentState;
-    GameState previousState;
     
     // Core systems
     std::unique_ptr<Renderer> renderer;

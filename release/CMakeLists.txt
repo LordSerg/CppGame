@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(Warcraft2Clone VERSION 1.0.0 LANGUAGES CXX)
+project(ThInK_AbOuT_NaMe_Of_ThE_GaMe VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,6 +7,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Options
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
+
+#
+add_subdirectory(lib)
 
 # Find packages
 find_package(OpenGL REQUIRED)
@@ -29,6 +32,8 @@ target_include_directories(imgui PUBLIC
 )
 target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
 
+
+
 # Add stb_image for texture loading
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE external/stb)
@@ -44,6 +49,7 @@ file(GLOB_RECURSE SOURCES
     src/AI/BuildOrder.cpp
     src/Audio/Audiomanager.cpp
     src/Core/Game.cpp
+    src/Core/GameState.cpp
     src/Entities/Building.cpp
     src/Entities/Entity.cpp
     src/Entities/Fighter.cpp
@@ -117,13 +123,18 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${OPENAL_INCLUDE_DIR}
 )
 
+#glm
+find_package(glm REQUIRED)
+
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
     OpenGL::GL
     imgui
     stb_image
+    glm::glm
     ${OPENAL_LIBRARY}
+    glad
 )
 
 # Copy assets to build directory

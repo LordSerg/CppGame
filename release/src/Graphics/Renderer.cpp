@@ -1,6 +1,8 @@
 #include "Renderer.h"
-#include <glad/glad.h>
+//#include <glad/glad.h>
 #include <iostream>
+#include "../../../incld/include/glad/glad.h"
+#include "../../../incld/include/GLFW/glfw3.h"
 
 // Simple shader sources
 const char* vertexShaderSource = R"(
@@ -95,6 +97,11 @@ void Renderer::Clear(float r, float g, float b, float a) {
 
 void Renderer::SetViewport(int x, int y, int w, int h) {
     glViewport(x, y, w, h);
+}
+
+void Renderer::SetCamera(Camera* cam)
+{
+    //TODO
 }
 
 void Renderer::DrawSprite(const Sprite& sprite, const Vector2& position, 

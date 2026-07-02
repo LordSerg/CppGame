@@ -26,7 +26,8 @@ void HUD::Render(Renderer* renderer, ResourceManager* resourceMgr,
 
 bool HUD::IsMouseOverUI(int mouseX, int mouseY) const {
     // Check if mouse is over any UI element
-    if (mouseX < renderer->GetWidth() / 4) return true; // Left panel
+    // Left panel area (1/4 of screen width) - approximate
+    if (mouseX < 250) return true; // Left panel
     if (mouseY < 50) return true; // Top resource bar
     return false;
 }

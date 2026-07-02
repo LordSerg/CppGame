@@ -5,6 +5,8 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include "../Entities/Building.h"
+#include "../Entities/Unit.h"
 
 struct Technology {
     std::string name;
@@ -12,10 +14,8 @@ struct Technology {
     std::vector<std::string> requiredFor;
     std::string description;
     std::string properties;
-    bool isBuilding;
-    bool isResearch;
-    
-    Technology() : isBuilding(false), isResearch(false) {}
+    bool isBuilding = false;
+    bool isResearch = false;
 };
 
 class TechTree {

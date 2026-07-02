@@ -6,8 +6,7 @@
 #include <filesystem>
 
 MenuSystem::MenuSystem()
-    : currentMenuType(GameState::MAIN_MENU)
-    , selectedIndex(0)
+    : selectedIndex(0)
     , selectedMapSize(1000)
 {
 }
@@ -52,13 +51,15 @@ void MenuSystem::Render(Renderer* renderer) {
 
 void MenuSystem::ShowMainMenu() {
     currentMenuItems.clear();
-    currentMenuType = GameState::MAIN_MENU;
+    CurrentGameState::CGS = GameState::MAIN_MENU;
     
     currentMenuItems.push_back(MenuItem("New Game", [this]() {
+        CurrentGameState::CGS = GameState::NEW_GAME_MENU;
         ShowNewGameMenu();
     }));
     
     currentMenuItems.push_back(MenuItem("Load Game", [this]() {
+        CurrentGameState::CGS = GameState::LOAD_GAME_MENU;
         ShowLoadGameMenu();
     }));
     
@@ -71,7 +72,6 @@ void MenuSystem::ShowMainMenu() {
 
 void MenuSystem::ShowNewGameMenu() {
     currentMenuItems.clear();
-    currentMenuType = GameState::NEW_GAME_MENU;
     
     currentMenuItems.push_back(MenuItem("Small Map (500x500)", [this]() {
         if (newGameCallback) {
@@ -104,7 +104,6 @@ void MenuSystem::ShowNewGameMenu() {
 
 void MenuSystem::ShowLoadGameMenu() {
     currentMenuItems.clear();
-    currentMenuType = GameState::LOAD_GAME_MENU;
     
     LoadSavedGamesList();
     
@@ -123,7 +122,7 @@ void MenuSystem::ShowLoadGameMenu() {
 
 void MenuSystem::ShowPauseMenu() {
     currentMenuItems.clear();
-    currentMenuType = GameState::PAUSED;
+    CurrentGameState::CGS = GameState::PAUSED;
     
     currentMenuItems.push_back(MenuItem("Continue Game", [this]() {
         if (stateChangeCallback) {

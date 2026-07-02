@@ -12,4 +12,9 @@ enum class GameState {
     EXIT
 };
 
+struct CurrentGameState
+{
+    static GameState CGS;
+};
+
 #endif // GAMESTATE_H

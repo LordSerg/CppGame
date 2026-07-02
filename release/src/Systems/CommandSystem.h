@@ -3,6 +3,7 @@
 
 #include "../Utils/Math.h"
 #include "../Entities/Unit.h"
+#include "../Entities/Building.h"
 #include <memory>
 #include <vector>
 

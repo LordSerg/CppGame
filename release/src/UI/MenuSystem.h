@@ -38,7 +38,6 @@ public:
     
 private:
     std::vector<MenuItem> currentMenuItems;
-    GameState currentMenuType;
     int selectedIndex;
     
     std::function<void(GameState)> stateChangeCallback;

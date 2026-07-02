@@ -7,7 +7,7 @@ Peasant::Peasant(int id, int ownerId)
 {
 }
 
-void Unit::Update(float deltaTime) {
+void Peasant::Update(float deltaTime) {
     Unit::Update(deltaTime);
     // Additional peasant-specific logic
 }

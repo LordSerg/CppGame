@@ -1,12 +1,13 @@
 #include "Game.h"
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
 #include <iostream>
 
 Game::Game() 
     : window(nullptr)
     , isRunning(false)
     , gameSpeed(1.0f)
-    , currentState(GameState::MAIN_MENU)
-    , previousState(GameState::MAIN_MENU)
     , screenWidth(1920)
     , screenHeight(1080)
     , humanPlayerId(0)
@@ -22,7 +23,7 @@ bool Game::Initialize() {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return false;
     }
-    
+
     // Create window
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -50,6 +51,15 @@ bool Game::Initialize() {
     }
     
     inputHandler = std::make_unique<InputHandler>(window);
+    
+    // Initialize ImGui
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+    
     menuSystem = std::make_unique<MenuSystem>();
     saveSystem = std::make_unique<SaveSystem>();
     
@@ -91,15 +101,17 @@ void Game::Run() {
 void Game::ProcessInput() {
     inputHandler->Update();
     
-    if (currentState == GameState::PLAYING && !inputHandler->IsMouseOverUI()) {
+    if (CurrentGameState::CGS == GameState::PLAYING && !inputHandler->IsMouseOverUI()) {
         // Handle game input
         // Unit selection, commands, etc.
     }
 }
 
 void Game::Update(float deltaTime) {
-    switch (currentState) {
+    switch (CurrentGameState::CGS) {
         case GameState::MAIN_MENU:
+            menuSystem->ShowMainMenu();
+            menuSystem->Render(renderer.get());
         case GameState::NEW_GAME_MENU:
         case GameState::LOAD_GAME_MENU:
             menuSystem->Update(deltaTime);
@@ -142,8 +154,10 @@ void Game::Update(float deltaTime) {
 void Game::Render() {
     renderer->Clear();
     
-    switch (currentState) {
+    switch (CurrentGameState::CGS) {
         case GameState::MAIN_MENU:
+            menuSystem->ShowMainMenu();
+            menuSystem->Render(renderer.get());
         case GameState::NEW_GAME_MENU:
         case GameState::LOAD_GAME_MENU:
             menuSystem->Render(renderer.get());
@@ -160,7 +174,7 @@ void Game::Render() {
                            selectionSystem.get());
             }
             
-            if (currentState == GameState::PAUSED) {
+            if (CurrentGameState::CGS == GameState::PAUSED) {
                 menuSystem->Render(renderer.get());
             }
             break;
@@ -179,6 +193,15 @@ void Game::CheckWinCondition() {
     // Implementation for checking win/lose conditions
     // Check if player has any units/buildings left
     // Check if all enemies are defeated
+}
+
+void Game::HandleStateTransitions() {
+    // Handle state transitions
+}
+
+void Game::ShowWinScreen() {
+    // Show win or lose screen
+    // Implementation for rendering win/lose screen
 }
 
 void Game::Shutdown() {

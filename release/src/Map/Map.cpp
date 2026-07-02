@@ -1,8 +1,10 @@
 #include "Map.h"
+#include "../Graphics/Renderer.h"
 #include "../Entities/Building.h"
 #include "../Entities/Unit.h"
 #include <algorithm>
 #include <random>
+#include <glm/glm.hpp>
 
 Map::Map(MapSize size)
     : size(size)
@@ -131,6 +133,15 @@ bool Map::CanPlaceBuilding(int x, int y, int buildingWidth, int buildingHeight) 
 
 void Map::AddEntity(std::shared_ptr<Entity> entity) {
     entities.push_back(entity);
+}
+
+std::vector<Entity*> Map::GetAllEntities() {
+    std::vector<Entity*> result;
+    result.reserve(entities.size());
+    for (auto& entity : entities) {
+        result.push_back(entity.get());
+    }
+    return result;
 }
 
 void Map::RemoveEntity(Entity* entity) {
