@@ -16,9 +16,14 @@
 #include "../Systems/PopulationSystem.h"
 #include "../AI/AIController.h"
 #include "../Serialization/SaveSystem.h"
+#include "../Entities/Peasant.h"
 #include <GLFW/glfw3.h>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
 #include <memory>
 #include <vector>
+#include <glm/glm.hpp>
 
 class Game {
 public:
@@ -36,11 +41,26 @@ private:
     
     void ChangeState(GameState newState);
     void HandleStateTransitions();
+
+    // Setup
+    void SetupMenuCallbacks();
+
+    // Game management
+    void StartNewGame(MapSize size);
+    void PlaceStartingUnits();
+    void SaveGameToFile(const std::string& saveName);
+    void LoadGameFromFile(const std::string& saveName);
+
+    // Input handling
+    void HandleGameInput();
     
     // Game loop control
     GLFWwindow* window;
     bool isRunning;
     float gameSpeed;
+    float gameTime;
+    GameState currentState;
+    GameState previousState;
     
     // Core systems
     std::unique_ptr<Renderer> renderer;
@@ -80,8 +100,7 @@ private:
     int humanPlayerId;
     
     void CheckWinCondition();
-    void ShowWinScreen();
-    void ShowLoseScreen();
+    void ShowEndScreen();
 };
 
 #endif // GAME_H

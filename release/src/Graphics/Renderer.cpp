@@ -1,8 +1,9 @@
 #include "Renderer.h"
-//#include <glad/glad.h>
 #include <iostream>
-#include "../../../incld/include/glad/glad.h"
-#include "../../../incld/include/GLFW/glfw3.h"
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+//#include "../../../incld/include/glad/glad.h"
+//#include "../../../incld/include/GLFW/glfw3.h"
 
 // Simple shader sources
 const char* vertexShaderSource = R"(

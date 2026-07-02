@@ -2,9 +2,10 @@
 #include "../Utils/Math.h"
 #include <iostream>
 #include <vector>
-
-// Vorbis decoding for OGG files would need additional library
-// For now, this is a simplified implementation
+#include <cstring>
+#include <fstream>
+#include <vorbis/vorbisfile.h>
+#include <mpg123.h>
 
 AudioManager::AudioManager()
     : device(nullptr)
@@ -39,6 +40,11 @@ bool AudioManager::Initialize() {
     // Create music source
     alGenSources(1, &musicSource);
     
+    // Initialize mpg123
+    if (mpg123_init() != MPG123_OK) {
+        std::cerr << "Warning: Failed to initialize mpg123" << std::endl;
+    }
+    
     return true;
 }
 
@@ -71,6 +77,9 @@ void AudioManager::Shutdown() {
     if (device) {
         alcCloseDevice(device);
     }
+    
+    // Cleanup mpg123
+    mpg123_exit();
 }
 
 void AudioManager::PlayMusic(const std::string& path, bool loop) {
@@ -149,24 +158,160 @@ void AudioManager::Update(const Vector2& listenerPosition) {
     );
 }
 
+bool AudioManager::HasExtension(const std::string& path, const std::string& ext) {
+    if (path.size() < ext.size()) return false;
+    return path.compare(path.size() - ext.size(), ext.size(), ext) == 0;
+}
+
 ALuint AudioManager::LoadSound(const std::string& path) {
     auto it = soundBuffers.find(path);
     if (it != soundBuffers.end()) {
         return it->second.bufferId;
     }
     
-    // This would need actual OGG file loading
-    // Using vorbisfile or similar library
-    // Simplified for now
+    ALuint buffer = 0;
     
-    ALuint buffer;
-    alGenBuffers(1, &buffer);
+    if (HasExtension(path, ".ogg")) {
+        buffer = LoadOGG(path);
+    } else if (HasExtension(path, ".mp3")) {
+        buffer = LoadMP3(path);
+    } else {
+        std::cerr << "Unsupported audio format: " << path << std::endl;
+        return 0;
+    }
     
-    // Load OGG file data
-    // ...
+    if (buffer != 0) {
+        soundBuffers[path] = {buffer, path};
+    }
     
-    soundBuffers[path] = {buffer, path};
     return buffer;
+}
+
+ALuint AudioManager::LoadOGG(const std::string& path) {
+    OggVorbis_File vf;
+    
+    FILE* fp = fopen(path.c_str(), "rb");
+    if (!fp) {
+        std::cerr << "Failed to open OGG file: " << path << std::endl;
+        return 0;
+    }
+    
+    if (ov_open(fp, &vf, nullptr, 0) < 0) {
+        std::cerr << "Failed to open OGG stream: " << path << std::endl;
+        fclose(fp);
+        return 0;
+    }
+    
+    // Get file info
+    vorbis_info* info = ov_info(&vf, -1);
+    if (!info) {
+        std::cerr << "Failed to get OGG info: " << path << std::endl;
+        ov_clear(&vf);
+        return 0;
+    }
+    
+    ALenum format;
+    if (info->channels == 1) {
+        format = AL_FORMAT_MONO16;
+    } else {
+        format = AL_FORMAT_STEREO16;
+    }
+    
+    ALsizei sampleRate = info->rate;
+    
+    // Read all PCM data
+    std::vector<char> pcmData;
+    char buffer[4096];
+    int bitStream = 0;
+    long bytesRead;
+    
+    while ((bytesRead = ov_read(&vf, buffer, sizeof(buffer), 0, 2, 1, &bitStream)) > 0) {
+        pcmData.insert(pcmData.end(), buffer, buffer + bytesRead);
+    }
+    
+    ov_clear(&vf);
+    
+    if (pcmData.empty()) {
+        std::cerr << "No PCM data decoded from OGG: " << path << std::endl;
+        return 0;
+    }
+    
+    // Upload to OpenAL
+    ALuint bufferId;
+    alGenBuffers(1, &bufferId);
+    alBufferData(bufferId, format, pcmData.data(), static_cast<ALsizei>(pcmData.size()), sampleRate);
+    
+    std::cout << "Loaded OGG: " << path 
+              << " (" << (pcmData.size() / 1024) << " KB, "
+              << sampleRate << " Hz, "
+              << info->channels << " channels)" << std::endl;
+    
+    return bufferId;
+}
+
+ALuint AudioManager::LoadMP3(const std::string& path) {
+    mpg123_handle* mh = mpg123_new(nullptr, nullptr);
+    if (!mh) {
+        std::cerr << "Failed to create mpg123 handle" << std::endl;
+        return 0;
+    }
+    
+    if (mpg123_open(mh, path.c_str()) != MPG123_OK) {
+        std::cerr << "Failed to open MP3 file: " << path 
+                  << " - " << mpg123_strerror(mh) << std::endl;
+        mpg123_delete(mh);
+        return 0;
+    }
+    
+    // Get file format
+    long rate;
+    int channels, encoding;
+    if (mpg123_getformat(mh, &rate, &channels, &encoding) != MPG123_OK) {
+        std::cerr << "Failed to get MP3 format: " << path << std::endl;
+        mpg123_close(mh);
+        mpg123_delete(mh);
+        return 0;
+    }
+    
+    // Force output to signed 16-bit
+    mpg123_format_none(mh);
+    mpg123_format(mh, rate, channels, MPG123_ENC_SIGNED_16);
+    
+    ALenum format;
+    if (channels == 1) {
+        format = AL_FORMAT_MONO16;
+    } else {
+        format = AL_FORMAT_STEREO16;
+    }
+    
+    // Read all PCM data
+    std::vector<char> pcmData;
+    unsigned char buffer[4096];
+    size_t bytesRead;
+    
+    while (mpg123_read(mh, buffer, sizeof(buffer), &bytesRead) == MPG123_OK) {
+        pcmData.insert(pcmData.end(), buffer, buffer + bytesRead);
+    }
+    
+    mpg123_close(mh);
+    mpg123_delete(mh);
+    
+    if (pcmData.empty()) {
+        std::cerr << "No PCM data decoded from MP3: " << path << std::endl;
+        return 0;
+    }
+    
+    // Upload to OpenAL
+    ALuint bufferId;
+    alGenBuffers(1, &bufferId);
+    alBufferData(bufferId, format, pcmData.data(), static_cast<ALsizei>(pcmData.size()), static_cast<ALsizei>(rate));
+    
+    std::cout << "Loaded MP3: " << path 
+              << " (" << (pcmData.size() / 1024) << " KB, "
+              << rate << " Hz, "
+              << channels << " channels)" << std::endl;
+    
+    return bufferId;
 }
 
 ALuint AudioManager::CreateSource() {

@@ -8,8 +8,11 @@ Game::Game()
     : window(nullptr)
     , isRunning(false)
     , gameSpeed(1.0f)
-    , screenWidth(1920)
-    , screenHeight(1080)
+    , gameTime(0)
+    , currentState(GameState::MAIN_MENU)
+    , previousState(GameState::MAIN_MENU)
+    , screenWidth(900)
+    , screenHeight(900)
     , humanPlayerId(0)
 {
 }
@@ -29,7 +32,7 @@ bool Game::Initialize() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     
-    window = glfwCreateWindow(screenWidth, screenHeight, "Warcraft 2 Clone", nullptr, nullptr);
+    window = glfwCreateWindow(screenWidth, screenHeight, "Yet still untitled", nullptr, nullptr);
     if (!window) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
@@ -51,23 +54,230 @@ bool Game::Initialize() {
     }
     
     inputHandler = std::make_unique<InputHandler>(window);
+    menuSystem = std::make_unique<MenuSystem>();
+    saveSystem = std::make_unique<SaveSystem>();
     
     // Initialize ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
     ImGui::StyleColorsDark();
+
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
     
-    menuSystem = std::make_unique<MenuSystem>();
-    saveSystem = std::make_unique<SaveSystem>();
+    // Setup menu callbacks
+    SetupMenuCallbacks();
+
+    // Show main menu
+    menuSystem->ShowMainMenu();
     
     // Start background music
+    std::cout<<"\nThe code of music playing was here\n";
+    //audioManager->PlayMusic("//media//oknelaksoms//New Volume//shit7//release//assets//audio//music//main_theme.ogg", true);
     audioManager->PlayMusic("assets/audio/music/main_theme.ogg", true);
     
     isRunning = true;
     return true;
+}
+
+void Game::SetupMenuCallbacks() {
+    // State change callback
+    menuSystem->SetStateChangeCallback([this](GameState newState) {
+        if (newState == GameState::EXIT) {
+            isRunning = false;
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+        } else {
+            ChangeState(newState);
+        }
+    });
+    
+    // New game callback
+    menuSystem->SetNewGameCallback([this](int mapSize) {
+        StartNewGame(static_cast<MapSize>(mapSize));
+    });
+    
+    // Load game callback
+    menuSystem->SetLoadGameCallback([this](const std::string& saveName) {
+        LoadGameFromFile(saveName);
+    });
+    
+    // Save game callback
+    menuSystem->SetSaveGameCallback([this](const std::string& saveName) {
+        SaveGameToFile(saveName);
+    });
+}
+
+void Game::StartNewGame(MapSize size) {
+    // Initialize game systems
+    map = std::make_unique<Map>(size);
+    map->Initialize();
+    
+    resourceManager = std::make_unique<ResourceManager>();
+    techTree = std::make_unique<TechTree>();
+    selectionSystem = std::make_unique<SelectionSystem>();
+    commandSystem = std::make_unique<CommandSystem>(map.get());
+    combatSystem = std::make_unique<CombatSystem>(map.get());
+    populationSystem = std::make_unique<PopulationSystem>(map.get(), resourceManager.get());
+    
+    hud = std::make_unique<HUD>();
+    hud->SetPlayerId(humanPlayerId);
+    
+    // Initialize players
+    players.clear();
+    
+    // Human player
+    players.push_back({
+        0, "Player", glm::vec3(1.0f, 0.0f, 0.0f), true, true, 0
+    });
+    
+    // AI player
+    players.push_back({
+        1, "AI", glm::vec3(0.0f, 0.0f, 1.0f), false, true, 0
+    });
+    
+    // Initialize resources for all players
+    for (const auto& player : players) {
+        resourceManager->InitializePlayer(player.id);
+        techTree->InitializePlayer(player.id);
+    }
+    
+    // Create AI controller for AI players
+    aiControllers.clear();
+    for (const auto& player : players) {
+        if (!player.isHuman) {
+            aiControllers.push_back(
+                std::make_unique<AIController>(player.id, AIDifficulty::MEDIUM)
+            );
+        }
+    }
+    
+    // Place starting units and buildings
+    PlaceStartingUnits();
+    
+    // Change to playing state
+    ChangeState(GameState::PLAYING);
+}
+
+void Game::PlaceStartingUnits() {
+    // Player starting position
+    Point2D playerStart(50, 50);
+    Point2D aiStart(450, 450);
+    
+    // Player starting units
+    for (int i = 0; i < 5; i++) {
+        auto peasant = std::make_shared<Peasant>(
+            map->GetNextEntityId(), 
+            humanPlayerId
+        );
+        peasant->SetPosition(
+            (playerStart.x + i * 2) * 32.0f, 
+            playerStart.y * 32.0f
+        );
+        map->AddEntity(peasant);
+        populationSystem->OnUnitCreated(humanPlayerId);
+    }
+    
+    // Player starting building (Hut)
+    auto playerHut = std::make_shared<Building>(
+        map->GetNextEntityId(),
+        humanPlayerId,
+        BuildingType::HUT
+    );
+    playerHut->SetPosition(playerStart.x * 32.0f, (playerStart.y + 5) * 32.0f);
+    playerHut->StartConstruction();
+    //playerHut->SetConstructionProgress(1.0f); // Instant complete
+    map->AddEntity(playerHut);
+    techTree->OnBuildingCompleted(humanPlayerId, BuildingType::HUT);
+    
+    // AI starting units
+    for (int i = 0; i < 5; i++) {
+        auto peasant = std::make_shared<Peasant>(
+            map->GetNextEntityId(), 
+            1); // AI player ID
+        peasant->SetPosition(
+            (aiStart.x + i * 2) * 32.0f, 
+            aiStart.y * 32.0f
+        );
+        map->AddEntity(peasant);
+        populationSystem->OnUnitCreated(1);
+    }
+    
+    // AI starting building
+    auto aiHut = std::make_shared<Building>(
+        map->GetNextEntityId(),
+        1,
+        BuildingType::HUT
+    );
+    aiHut->SetPosition(aiStart.x * 32.0f, (aiStart.y + 5) * 32.0f);
+    aiHut->StartConstruction();
+    //aiHut->SetConstructionProgress(1.0f);
+    map->AddEntity(aiHut);
+    techTree->OnBuildingCompleted(1, BuildingType::HUT);
+}
+
+void Game::SaveGameToFile(const std::string& saveName) {
+    if (!saveSystem->SaveGame(saveName)) {
+        std::cerr << "Failed to save game: " << saveName << std::endl;
+        return;
+    }
+    
+    float gameTime = glfwGetTime();
+    saveSystem->SaveGameState(map.get(), resourceManager.get(), techTree.get(), gameTime);
+    saveSystem->FinishSave();
+    
+    std::cout << "Game saved: " << saveName << std::endl;
+}
+
+void Game::LoadGameFromFile(const std::string& saveName) {
+    if (!saveSystem->LoadGame(saveName)) {
+        std::cerr << "Failed to load game: " << saveName << std::endl;
+        return;
+    }
+    
+    // Create new game systems if they don't exist
+    if (!map) {
+        map = std::make_unique<Map>(MapSize::MEDIUM);
+        map->Initialize();
+    }
+    
+    if (!resourceManager) {
+        resourceManager = std::make_unique<ResourceManager>();
+    }
+    
+    if (!techTree) {
+        techTree = std::make_unique<TechTree>();
+    }
+    
+    if (!selectionSystem) {
+        selectionSystem = std::make_unique<SelectionSystem>();
+    }
+    
+    if (!commandSystem) {
+        commandSystem = std::make_unique<CommandSystem>(map.get());
+    }
+    
+    if (!combatSystem) {
+        combatSystem = std::make_unique<CombatSystem>(map.get());
+    }
+    
+    if (!populationSystem) {
+        populationSystem = std::make_unique<PopulationSystem>(map.get(), resourceManager.get());
+    }
+    
+    if (!hud) {
+        hud = std::make_unique<HUD>();
+        hud->SetPlayerId(humanPlayerId);
+    }
+    
+    float gameTime;
+    saveSystem->LoadGameState(map.get(), resourceManager.get(), techTree.get(), gameTime);
+    
+    std::cout << "Game loaded: " << saveName << std::endl;
+    
+    ChangeState(GameState::PLAYING);
 }
 
 void Game::Run() {
@@ -101,25 +311,158 @@ void Game::Run() {
 void Game::ProcessInput() {
     inputHandler->Update();
     
+    // Check for escape key to pause
+    if (CurrentGameState::CGS == GameState::PLAYING && 
+        inputHandler->IsKeyPressed(GLFW_KEY_ESCAPE)) {
+        ChangeState(GameState::PAUSED);
+        menuSystem->ShowPauseMenu();
+    }
+
+    // Camera controls
+    if (CurrentGameState::CGS == GameState::PLAYING && renderer && renderer->GetCamera()) {
+        Camera* camera = renderer->GetCamera();
+        
+        float cameraSpeed = 500.0f * gameSpeed;
+        
+        if (inputHandler->IsKeyDown(GLFW_KEY_W) || inputHandler->IsKeyDown(GLFW_KEY_UP)) {
+            camera->Move(Vector2(0, -cameraSpeed * 0.016f));
+        }
+        if (inputHandler->IsKeyDown(GLFW_KEY_S) || inputHandler->IsKeyDown(GLFW_KEY_DOWN)) {
+            camera->Move(Vector2(0, cameraSpeed * 0.016f));
+        }
+        if (inputHandler->IsKeyDown(GLFW_KEY_A) || inputHandler->IsKeyDown(GLFW_KEY_LEFT)) {
+            camera->Move(Vector2(-cameraSpeed * 0.016f, 0));
+        }
+        if (inputHandler->IsKeyDown(GLFW_KEY_D) || inputHandler->IsKeyDown(GLFW_KEY_RIGHT)) {
+            camera->Move(Vector2(cameraSpeed * 0.016f, 0));
+        }
+        
+        // Zoom
+        float scrollDelta = inputHandler->GetScrollDelta();
+        if (scrollDelta != 0) {
+            camera->Zoom(scrollDelta * 0.1f);
+        }
+    }
+
+    // Unit selection and commands
     if (CurrentGameState::CGS == GameState::PLAYING && !inputHandler->IsMouseOverUI()) {
-        // Handle game input
-        // Unit selection, commands, etc.
+        HandleGameInput();
+    }
+}
+
+void Game::HandleGameInput() {
+    if (!map || !selectionSystem || !commandSystem) return;
+    
+    // Left click - selection
+    if (inputHandler->IsMouseButtonPressed(MouseButton::LEFT)) {
+        // Start selection box
+    }
+    
+    if (inputHandler->IsMouseButtonReleased(MouseButton::LEFT)) {
+        Rect selectionRect = inputHandler->GetSelectionRect();
+        
+        if (selectionRect.width > 5 && selectionRect.height > 5) {
+            // Box selection
+            Camera* camera = renderer->GetCamera();
+            
+            Vector2 topLeft = camera->ScreenToWorld(
+                Vector2(selectionRect.x, selectionRect.y));
+            Vector2 bottomRight = camera->ScreenToWorld(
+                Vector2(selectionRect.x + selectionRect.width, 
+                       selectionRect.y + selectionRect.height));
+            
+            Rect worldRect(
+                topLeft.x / 32, topLeft.y / 32,
+                (bottomRight.x - topLeft.x) / 32,
+                (bottomRight.y - topLeft.y) / 32
+            );
+            
+            std::vector<Entity*> entities = map->GetEntitiesInRect(worldRect);
+            selectionSystem->SelectEntitiesInRect(entities, worldRect, humanPlayerId);
+        } else {
+            // Single click selection
+            Vector2 mousePos = inputHandler->GetMousePosition();
+            Camera* camera = renderer->GetCamera();
+            Vector2 worldPos = camera->ScreenToWorld(mousePos);
+            
+            Point2D gridPos(worldPos.x / 32, worldPos.y / 32);
+            
+            std::vector<Entity*> entities = map->GetEntitiesAt(gridPos.x, gridPos.y);
+            
+            if (!entities.empty()) {
+                selectionSystem->ClearSelection();
+                selectionSystem->SelectEntity(entities[0]);
+            } else {
+                selectionSystem->ClearSelection();
+            }
+        }
+    }
+    
+    // Right click - command
+    if (inputHandler->IsMouseButtonPressed(MouseButton::RIGHT)) {
+        auto selectedUnits = selectionSystem->GetSelectedUnits();
+        
+        if (!selectedUnits.empty()) {
+            Vector2 mousePos = inputHandler->GetMousePosition();
+            Camera* camera = renderer->GetCamera();
+            Vector2 worldPos = camera->ScreenToWorld(mousePos);
+            
+            Point2D gridPos(worldPos.x / 32, worldPos.y / 32);
+            
+            // Check if clicking on an entity
+            std::vector<Entity*> entities = map->GetEntitiesAt(gridPos.x, gridPos.y);
+            
+            if (!entities.empty() && entities[0]->GetOwnerId() != humanPlayerId) {
+                // Attack enemy
+                commandSystem->IssueAttack(selectedUnits, entities[0], false);
+                audioManager->PlaySound("assets/audio/sfx/order_attack.ogg");
+            } else {
+                // Move to location
+                commandSystem->IssueMove(selectedUnits, gridPos, false);
+                audioManager->PlaySound("assets/audio/sfx/order_move.ogg");
+            }
+        }
+    }
+    
+    // Hotkeys
+    if (inputHandler->IsKeyPressed(GLFW_KEY_H)) {
+        // Stop selected units
+        auto selectedUnits = selectionSystem->GetSelectedUnits();
+        if (!selectedUnits.empty()) {
+            commandSystem->IssueStop(selectedUnits);
+        }
+    }
+    
+    // Game speed controls
+    if (inputHandler->IsKeyPressed(GLFW_KEY_EQUAL) || 
+        inputHandler->IsKeyPressed(GLFW_KEY_KP_ADD)) {
+        gameSpeed = std::min(4.0f, gameSpeed * 1.5f);
+    }
+    if (inputHandler->IsKeyPressed(GLFW_KEY_MINUS) || 
+        inputHandler->IsKeyPressed(GLFW_KEY_KP_SUBTRACT)) {
+        gameSpeed = std::max(0.25f, gameSpeed / 1.5f);
+    }
+    if (inputHandler->IsKeyPressed(GLFW_KEY_BACKSPACE)) {
+        gameSpeed = 1.0f;
     }
 }
 
 void Game::Update(float deltaTime) {
     switch (CurrentGameState::CGS) {
         case GameState::MAIN_MENU:
-            menuSystem->ShowMainMenu();
-            menuSystem->Render(renderer.get());
+            //menuSystem->ShowMainMenu();
+            //menuSystem->Render(renderer.get());
         case GameState::NEW_GAME_MENU:
         case GameState::LOAD_GAME_MENU:
             menuSystem->Update(deltaTime);
             break;
             
         case GameState::PLAYING:
+            gameTime += deltaTime;
+            
             if (map) {
                 map->Update(deltaTime);
+                map->UpdateFogOfWar(humanPlayerId);
             }
             
             if (commandSystem) {
@@ -136,12 +479,27 @@ void Game::Update(float deltaTime) {
                           techTree.get(), commandSystem.get());
             }
             
+            // Update audio listener position
+            if (audioManager && renderer) {
+                Vector2 cameraPos = renderer->GetCamera()->GetPosition();
+                audioManager->Update(cameraPos);
+            }
+            
             CheckWinCondition();
             break;
             
         case GameState::PAUSED:
             // Don't update game logic
             menuSystem->Update(deltaTime);
+            break;
+
+        case GameState::WIN_SCREEN:
+        case GameState::LOSE_SCREEN:
+            menuSystem->Update(deltaTime);
+            break;
+            
+        case GameState::EXIT:
+            isRunning = false;
             break;
             
         default:
@@ -156,8 +514,8 @@ void Game::Render() {
     
     switch (CurrentGameState::CGS) {
         case GameState::MAIN_MENU:
-            menuSystem->ShowMainMenu();
-            menuSystem->Render(renderer.get());
+            //menuSystem->ShowMainMenu();
+            //menuSystem->Render(renderer.get());
         case GameState::NEW_GAME_MENU:
         case GameState::LOAD_GAME_MENU:
             menuSystem->Render(renderer.get());
@@ -173,6 +531,12 @@ void Game::Render() {
                 hud->Render(renderer.get(), resourceManager.get(), 
                            selectionSystem.get());
             }
+
+            // Draw selection box
+            if (inputHandler->IsSelecting()) {
+                Rect selectionRect = inputHandler->GetSelectionRect();
+                renderer->DrawRect(selectionRect, glm::vec3(0.0f, 1.0f, 0.0f));
+            }
             
             if (CurrentGameState::CGS == GameState::PAUSED) {
                 menuSystem->Render(renderer.get());
@@ -181,7 +545,8 @@ void Game::Render() {
             
         case GameState::WIN_SCREEN:
         case GameState::LOSE_SCREEN:
-            ShowWinScreen();
+            //menuSystem->Render(renderer.get());
+            ShowEndScreen();
             break;
             
         default:
@@ -190,21 +555,100 @@ void Game::Render() {
 }
 
 void Game::CheckWinCondition() {
-    // Implementation for checking win/lose conditions
-    // Check if player has any units/buildings left
-    // Check if all enemies are defeated
+    if (!map) return;
+    
+    std::vector<int> alivePlayers;
+    
+    for (const auto& player : players) {
+        if (!player.isAlive) continue;
+        
+        // Check if player has any units or buildings
+        bool hasUnits = false;
+        bool hasBuildings = false;
+        
+        for (const auto& entity : map->GetAllEntities()) {
+            if (entity->GetOwnerId() == player.id && entity->IsAlive()) {
+                if (entity->GetType() == EntityType::UNIT) {
+                    hasUnits = true;
+                } else if (entity->GetType() == EntityType::BUILDING) {
+                    Building* building = static_cast<Building*>(entity);
+                    if (building->CountsForVictory()) {
+                        hasBuildings = true;
+                    }
+                }
+            }
+        }
+        
+        if (hasUnits || hasBuildings) {
+            alivePlayers.push_back(player.id);
+        }
+    }
+    
+    // Check for victory/defeat
+    if (alivePlayers.size() == 1) {
+        if (alivePlayers[0] == humanPlayerId) {
+            ChangeState(GameState::WIN_SCREEN);
+        } else {
+            ChangeState(GameState::LOSE_SCREEN);
+        }
+    } else if (alivePlayers.empty()) {
+        // Draw?
+        ChangeState(GameState::LOSE_SCREEN);
+    }
+}
+
+void Game::ShowEndScreen() {
+    std::vector<std::pair<std::string, int>> scores;
+    
+    for (const auto& player : players) {
+        scores.push_back({player.name, player.score});
+    }
+    
+    if (currentState == GameState::WIN_SCREEN) {
+        menuSystem->ShowWinScreen(players[humanPlayerId].score, scores);
+    } else {
+        menuSystem->ShowLoseScreen(players[humanPlayerId].score, scores);
+    }
+    
+    menuSystem->Render(renderer.get());
+}
+
+void Game::ChangeState(GameState newState) {
+    previousState = currentState;
+    currentState = newState;
+    CurrentGameState::CGS = newState;
 }
 
 void Game::HandleStateTransitions() {
-    // Handle state transitions
-}
-
-void Game::ShowWinScreen() {
-    // Show win or lose screen
-    // Implementation for rendering win/lose screen
+    // Handle any necessary cleanup or setup when states change
+    if (previousState != currentState) {
+        switch (currentState) {
+            case GameState::PLAYING:
+                if (audioManager) {
+                    audioManager->StopMusic();
+                    audioManager->PlayMusic("assets/audio/music/game_music.mp3", true);
+                }
+                break;
+                
+            case GameState::MAIN_MENU:
+                if (audioManager) {
+                    audioManager->StopMusic();
+                    audioManager->PlayMusic("assets/audio/music/main_theme.ogg", true);
+                }
+                break;
+                
+            default:
+                break;
+        }
+    }
 }
 
 void Game::Shutdown() {
+    // ImGui cleanup
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    
     audioManager->Shutdown();
     
     if (window) {

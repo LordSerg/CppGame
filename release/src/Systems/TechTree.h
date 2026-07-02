@@ -50,6 +50,8 @@ public:
     void Serialize(class SaveSystem* saveSystem);
     void Deserialize(class SaveSystem* saveSystem);
     
+    void InitializePlayer(int playerId);
+    
 private:
     std::unordered_map<std::string, Technology> technologies;
     
@@ -62,7 +64,6 @@ private:
     std::unordered_map<int, PlayerTechState> playerStates;
     
     void InitializeTechnologies();
-    void InitializePlayer(int playerId);
     bool CheckRequirements(int playerId, const std::string& techName) const;
     
     std::string BuildingTypeToTechName(BuildingType type) const;

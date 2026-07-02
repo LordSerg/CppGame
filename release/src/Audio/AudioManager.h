@@ -49,8 +49,12 @@ private:
     float sfxVolume;
     
     ALuint LoadSound(const std::string& path);
+    ALuint LoadOGG(const std::string& path);
+    ALuint LoadMP3(const std::string& path);
     ALuint CreateSource();
     void ReleaseSource(ALuint source);
+    
+    bool HasExtension(const std::string& path, const std::string& ext);
 };
 
 #endif // AUDIOMANAGER_H

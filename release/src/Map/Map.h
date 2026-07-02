@@ -30,6 +30,7 @@ public:
     int GetHeight() const { return height; }
     Tile* GetTile(int x, int y);
     const Tile* GetTile(int x, int y) const;
+
     
     bool IsWalkable(int x, int y) const;
     bool IsInBounds(int x, int y) const;
@@ -40,8 +41,8 @@ public:
     void RemoveEntity(Entity* entity);
     std::vector<Entity*> GetEntitiesInRect(const Rect& rect);
     std::vector<Entity*> GetEntitiesAt(int x, int y);
+    std::vector<Entity*> GetAllEntities();
     Entity* GetEntityById(int id);
-    std::vector<Entity*> GetAllEntities();// TODO: make realisation
     
     // Obstacle management
     void AddObstacle(std::shared_ptr<Obstacle> obstacle);
@@ -62,6 +63,13 @@ public:
     // Serialization
     void Serialize(class SaveSystem* saveSystem);
     void Deserialize(class SaveSystem* saveSystem);
+
+    int GetNextEntityId() { return nextEntityId++; }
+    const std::vector<std::shared_ptr<Entity>>& GetAllEntities() const { return entities; }
+    const std::vector<std::shared_ptr<Obstacle>>& GetAllObstacles() const { return obstacles; }
+    int GetEntityCount() const { return entities.size(); }
+    int GetObstacleCount() const { return obstacles.size(); }
+    void ClearAllEntities() { entities.clear(); obstacles.clear(); }
     
 private:
     int width;

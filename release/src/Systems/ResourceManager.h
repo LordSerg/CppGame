@@ -72,10 +72,11 @@ public:
     void Serialize(class SaveSystem* saveSystem);
     void Deserialize(class SaveSystem* saveSystem);
     
+    void InitializePlayer(int playerId);
+    
 private:
     std::unordered_map<int, PlayerResources> playerResources;
     
-    void InitializePlayer(int playerId);
 };
 
 #endif // RESOURCEMANAGER_H
