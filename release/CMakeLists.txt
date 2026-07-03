@@ -135,6 +135,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glm::glm
     ${OPENAL_LIBRARY}
     glad
+    vorbis
+    vorbisfile
+    ogg
+    mpg123
 )
 
 # Copy assets to build directory
