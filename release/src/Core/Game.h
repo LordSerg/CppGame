@@ -33,6 +33,9 @@ public:
     bool Initialize();
     void Run();
     void Shutdown();
+    
+    // Window resize (public for callback)
+    void OnWindowResize(int width, int height);
 
 private:
     void ProcessInput();

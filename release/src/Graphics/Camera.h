@@ -30,6 +30,8 @@ public:
     void SetBounds(const Rect& bounds);
     void ClampToBounds();
     
+    void SetScreenSize(int w, int h) { screenWidth = w; screenHeight = h; }
+    
 private:
     Vector2 position;
     float zoom;

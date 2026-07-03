@@ -6,6 +6,25 @@
 #include <random>
 #include <glm/glm.hpp>
 
+// Grass texture: 256x640, each tile is 32x32
+// Second block (index 1) starts at pixel x=32, y=0
+static const float GRASS_TEX_UV_X = 32.0f / 256.0f;  // 0.125
+static const float GRASS_TEX_UV_Y = 0.0f;
+static const float GRASS_TEX_UV_W = 32.0f / 256.0f;  // 0.125
+static const float GRASS_TEX_UV_H = 32.0f / 640.0f;  // 0.05
+static const float DIRT_TEX_UV_X = 0.0f;
+static const float DIRT_TEX_UV_Y = 0.0f;
+static const float DIRT_TEX_UV_W = 32.0f / 256.0f;
+static const float DIRT_TEX_UV_H = 32.0f / 640.0f;
+static const float STONE_TEX_UV_X = 64.0f / 256.0f;
+static const float STONE_TEX_UV_Y = 0.0f;
+static const float STONE_TEX_UV_W = 32.0f / 256.0f;
+static const float STONE_TEX_UV_H = 32.0f / 640.0f;
+static const float WATER_TEX_UV_X = 96.0f / 256.0f;
+static const float WATER_TEX_UV_Y = 0.0f;
+static const float WATER_TEX_UV_W = 32.0f / 256.0f;
+static const float WATER_TEX_UV_H = 32.0f / 640.0f;
+
 Map::Map(MapSize size)
     : size(size)
     , width((int)size)
@@ -49,25 +68,73 @@ void Map::Update(float deltaTime) {
 }
 
 void Map::Render(Renderer* renderer, int playerId) {
-    // Render tiles
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
+    Camera* camera = renderer->GetCamera();
+    if (!camera) return;
+    
+    // Load terrain texture once
+    Texture* grassTex = renderer->LoadTexture("assets/textures/terrain/grass.png");
+    
+    // Get camera bounds in world space
+    Vector2 camPos = camera->GetPosition();
+    float zoom = camera->GetZoom();
+    int screenW = renderer->GetWidth();
+    int screenH = renderer->GetHeight();
+    
+    // Calculate visible tile range
+    int startTileX = std::max(0, (int)((camPos.x - screenW / (2.0f * zoom)) / 32.0f) - 1);
+    int startTileY = std::max(0, (int)((camPos.y - screenH / (2.0f * zoom)) / 32.0f) - 1);
+    int endTileX = std::min(width, (int)((camPos.x + screenW / (2.0f * zoom)) / 32.0f) + 1);
+    int endTileY = std::min(height, (int)((camPos.y + screenH / (2.0f * zoom)) / 32.0f) + 1);
+    
+    // Render visible tiles only
+    for (int y = startTileY; y < endTileY; y++) {
+        for (int x = startTileX; x < endTileX; x++) {
             if (!IsVisible(x, y, playerId) && !IsExplored(x, y, playerId)) {
                 continue; // Don't render unexplored areas
             }
             
-            // Render tile
+            // Draw tile in world coordinates (camera handles view/proj)
             Vector2 worldPos(x * 32.0f, y * 32.0f);
-            Vector2 screenPos = renderer->WorldToScreen(worldPos);
             
-            // Draw tile sprite (grass, dirt, etc.)
-            // ...
+            Tile* tile = GetTile(x, y);
+            if (tile && grassTex) {
+                // Use texture with sub-rect based on tile type
+                float uvX = GRASS_TEX_UV_X;
+                float uvY = GRASS_TEX_UV_Y;
+                float uvW = GRASS_TEX_UV_W;
+                float uvH = GRASS_TEX_UV_H;
+                
+                switch (tile->GetType()) {
+                    case TileType::GRASS: 
+                        uvX = GRASS_TEX_UV_X; break;
+                    case TileType::DIRT:  
+                        uvX = DIRT_TEX_UV_X; break;
+                    case TileType::STONE: 
+                        uvX = STONE_TEX_UV_X; break;
+                    case TileType::WATER: 
+                        uvX = WATER_TEX_UV_X; break;
+                }
+                
+                renderer->DrawTexturedRect(grassTex, worldPos, 32.0f, 32.0f, 
+                                          glm::vec3(1.0f), uvX, uvY, uvW, uvH);
+            } else {
+                // Fallback to colored rect if no texture
+                glm::vec3 tileColor(0.2f, 0.5f, 0.1f);
+                if (tile) {
+                    switch (tile->GetType()) {
+                        case TileType::GRASS: tileColor = glm::vec3(0.2f, 0.5f, 0.1f); break;
+                        case TileType::DIRT:  tileColor = glm::vec3(0.5f, 0.35f, 0.15f); break;
+                        case TileType::STONE: tileColor = glm::vec3(0.4f, 0.4f, 0.4f); break;
+                        case TileType::WATER: tileColor = glm::vec3(0.1f, 0.3f, 0.6f); break;
+                    }
+                }
+                renderer->DrawRect(Rect((int)worldPos.x, (int)worldPos.y, 32, 32), tileColor);
+            }
             
-            // Apply fog
+            // Apply fog overlay
             if (!IsVisible(x, y, playerId)) {
-                // Draw semi-transparent overlay for explored but not visible
-                renderer->DrawRect(Rect(screenPos.x, screenPos.y, 32, 32), 
-                                 glm::vec3(0, 0, 0) * 0.5f);
+                renderer->DrawRect(Rect((int)worldPos.x, (int)worldPos.y, 32, 32), 
+                                 glm::vec3(0.0f, 0.0f, 0.0f));
             }
         }
     }
@@ -142,6 +209,20 @@ std::vector<Entity*> Map::GetAllEntities() {
         result.push_back(entity.get());
     }
     return result;
+}
+
+std::vector<std::shared_ptr<Entity>> Map::GetAllEntitiesShared() {
+    return entities;
+}
+
+void Map::RemoveDeadEntities() {
+    entities.erase(
+        std::remove_if(entities.begin(), entities.end(),
+            [](const std::shared_ptr<Entity>& e) {
+                return !e->IsAlive();
+            }),
+        entities.end()
+    );
 }
 
 void Map::RemoveEntity(Entity* entity) {

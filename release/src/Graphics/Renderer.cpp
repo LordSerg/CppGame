@@ -15,10 +15,12 @@ out vec2 TexCoord;
 
 uniform mat4 projection;
 uniform mat4 model;
+uniform vec4 texSubRect; // x, y, w, h in normalized UV coords
 
 void main() {
     gl_Position = projection * model * vec4(aPos, 0.0, 1.0);
-    TexCoord = aTexCoord;
+    // Map full texture coords to sub-rect
+    TexCoord = aTexCoord * texSubRect.zw + texSubRect.xy;
 }
 )";
 
@@ -97,6 +99,8 @@ void Renderer::Clear(float r, float g, float b, float a) {
 }
 
 void Renderer::SetViewport(int x, int y, int w, int h) {
+    width = w;
+    height = h;
     glViewport(x, y, w, h);
 }
 
@@ -121,6 +125,7 @@ void Renderer::DrawSprite(const Sprite& sprite, const Vector2& position,
                        1, GL_FALSE, &model[0][0]);
     glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color[0]);
     glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 1);
+    glUniform4f(glGetUniformLocation(shaderProgram, "texSubRect"), 0.0f, 0.0f, 1.0f, 1.0f);
     
     // Bind texture
     if (sprite.GetTexture()) {
@@ -134,6 +139,27 @@ void Renderer::DrawSprite(const Sprite& sprite, const Vector2& position,
     glBindVertexArray(0);
 }
 
+void Renderer::DrawScreenRect(const Rect& rect, const glm::vec3& color) {
+    glUseProgram(shaderProgram);
+    
+    // Use orthographic projection for screen-space rendering
+    glm::mat4 projection = glm::ortho(0.0f, (float)width, (float)height, 0.0f, -1.0f, 1.0f);
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(rect.x, rect.y, 0.0f));
+    model = glm::scale(model, glm::vec3(rect.width, rect.height, 1.0f));
+    
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 
+                       1, GL_FALSE, &projection[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 
+                       1, GL_FALSE, &model[0][0]);
+    glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color[0]);
+    glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 0);
+    
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+}
+
 void Renderer::DrawRect(const Rect& rect, const glm::vec3& color) {
     glUseProgram(shaderProgram);
     
@@ -141,8 +167,11 @@ void Renderer::DrawRect(const Rect& rect, const glm::vec3& color) {
     model = glm::translate(model, glm::vec3(rect.x, rect.y, 0.0f));
     model = glm::scale(model, glm::vec3(rect.width, rect.height, 1.0f));
     
+    // Combine projection * view for proper camera transformation
+    glm::mat4 viewProj = camera->GetProjectionMatrix() * camera->GetViewMatrix();
+    
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 
-                       1, GL_FALSE, &camera->GetProjectionMatrix()[0][0]);
+                       1, GL_FALSE, &viewProj[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 
                        1, GL_FALSE, &model[0][0]);
     glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color[0]);
@@ -173,6 +202,38 @@ void Renderer::DrawLine(const Vector2& start, const Vector2& end,
                        1, GL_FALSE, &model[0][0]);
     glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color[0]);
     glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 0);
+    
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+}
+
+void Renderer::DrawTexturedRect(Texture* texture, const Vector2& position, 
+                                float width, float height,
+                                const glm::vec3& color,
+                                float uvX, float uvY, float uvW, float uvH) {
+    if (!texture) return;
+    
+    glUseProgram(shaderProgram);
+    
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(position.x, position.y, 0.0f));
+    model = glm::scale(model, glm::vec3(width, height, 1.0f));
+    
+    // Combine projection * view for proper camera transformation
+    glm::mat4 viewProj = camera->GetProjectionMatrix() * camera->GetViewMatrix();
+    
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 
+                       1, GL_FALSE, &viewProj[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 
+                       1, GL_FALSE, &model[0][0]);
+    glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color[0]);
+    glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 1);
+    glUniform4f(glGetUniformLocation(shaderProgram, "texSubRect"), uvX, uvY, uvW, uvH);
+    
+    // Bind texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture->GetID());
     
     glBindVertexArray(quadVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);

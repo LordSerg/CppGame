@@ -112,19 +112,33 @@ void Unit::Update(float deltaTime) {
 }
 
 void Unit::Render(Renderer* renderer) {
-    Vector2 screenPos = renderer->WorldToScreen(position);
+    Vector2 worldPos(position.x, position.y);
     
-    // Render unit based on type and owner
-    glm::vec3 color(1.0f, 0.0f, 0.0f); // Default red for player
-    if (ownerId == 1) color = glm::vec3(0.0f, 0.0f, 1.0f); // Blue for AI
+    // Load unit texture
+    Texture* unitTex = renderer->LoadTexture("assets/textures/units/Human.png");
     
-    renderer->DrawRect(
-        Rect(screenPos.x, screenPos.y, 32, 32),
-        color
-    );
+    if (unitTex) {
+        // Render unit with texture - use full texture (500x500 is a single frame)
+        glm::vec3 color(1.0f, 0.7f, 0.7f); // Slight tint for player
+        if (ownerId == 1) color = glm::vec3(0.7f, 0.7f, 1.0f); // Blue tint for AI
+        
+        renderer->DrawTexturedRect(unitTex, worldPos, 32.0f, 32.0f, color,
+                                   0.0f, 0.0f, 1.0f, 1.0f);
+    } else {
+        // Fallback to colored rect
+        Vector2 screenPos = renderer->WorldToScreen(position);
+        glm::vec3 color(1.0f, 0.0f, 0.0f);
+        if (ownerId == 1) color = glm::vec3(0.0f, 0.0f, 1.0f);
+        
+        renderer->DrawRect(
+            Rect(screenPos.x, screenPos.y, 32, 32),
+            color
+        );
+    }
     
     // Draw selection indicator
     if (selected) {
+        Vector2 screenPos = renderer->WorldToScreen(position);
         renderer->DrawCircle(
             Vector2(screenPos.x + 16, screenPos.y + 16),
             20,
@@ -133,6 +147,7 @@ void Unit::Render(Renderer* renderer) {
     }
     
     // Draw health bar
+    Vector2 screenPos = renderer->WorldToScreen(position);
     float healthPercent = (float)currentHealth / maxHealth;
     renderer->DrawRect(
         Rect(screenPos.x, screenPos.y - 5, 32 * healthPercent, 3),

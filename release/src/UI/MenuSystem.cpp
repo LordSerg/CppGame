@@ -16,10 +16,6 @@ void MenuSystem::Update(float deltaTime) {
 }
 
 void MenuSystem::Render(Renderer* renderer) {
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-    
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | 
                                     ImGuiWindowFlags_NoResize |
                                     ImGuiWindowFlags_NoMove |
@@ -44,9 +40,6 @@ void MenuSystem::Render(Renderer* renderer) {
     }
     
     ImGui::End();
-    
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 void MenuSystem::ShowMainMenu() {

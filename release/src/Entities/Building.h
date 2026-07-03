@@ -40,6 +40,7 @@ public:
     // Construction
     void StartConstruction();
     void AddConstructionProgress(float amount);
+    void SetConstructionProgress(float amount);
     float GetConstructionProgress() const { return constructionProgress; }
     bool IsCompleted() const { return state == BuildingState::COMPLETED; }
     bool IsUnderConstruction() const { return state == BuildingState::UNDER_CONSTRUCTION; }

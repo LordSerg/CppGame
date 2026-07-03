@@ -30,10 +30,16 @@ public:
     void DrawSprite(const Sprite& sprite, const Vector2& position, 
                    const glm::vec3& color = glm::vec3(1.0f));
     void DrawRect(const Rect& rect, const glm::vec3& color);
+    void DrawScreenRect(const Rect& rect, const glm::vec3& color);
     void DrawLine(const Vector2& start, const Vector2& end, 
                  const glm::vec3& color, float thickness = 1.0f);
     void DrawCircle(const Vector2& center, float radius, 
                    const glm::vec3& color);
+    // Textured rect with sub-rect UV support (for sprite sheets)
+    void DrawTexturedRect(Texture* texture, const Vector2& position, float width, float height,
+                         const glm::vec3& color = glm::vec3(1.0f),
+                         float uvX = 0.0f, float uvY = 0.0f, 
+                         float uvW = 1.0f, float uvH = 1.0f);
     
     // Isometric conversion
     Vector2 WorldToScreen(const Vector2& worldPos) const;

@@ -159,24 +159,43 @@ void Building::Update(float deltaTime) {
 }
 
 void Building::Render(Renderer* renderer) {
-    Vector2 screenPos = renderer->WorldToScreen(position);
+    Vector2 worldPos(position.x, position.y);
     
-    // Render building based on type and owner
-    glm::vec3 color(0.8f, 0.4f, 0.2f); // Brown for buildings
-    if (ownerId == 1) color = glm::vec3(0.3f, 0.3f, 0.8f);
+    // Load building texture
+    Texture* buildingTex = renderer->LoadTexture("assets/textures/buildings/House1.png");
     
-    if (state == BuildingState::BLUEPRINT) {
-        color = glm::vec3(0.5f, 0.5f, 0.5f);
-    } else if (state == BuildingState::UNDER_CONSTRUCTION) {
-        color = color * 0.7f;
+    if (buildingTex && state != BuildingState::BLUEPRINT) {
+        // Render building with texture
+        glm::vec3 color(1.0f, 0.9f, 0.8f); // Slight warm tint for player
+        if (ownerId == 1) color = glm::vec3(0.8f, 0.8f, 1.0f); // Blue tint for AI
+        
+        if (state == BuildingState::UNDER_CONSTRUCTION) {
+            color = color * 0.6f; // Darker when under construction
+        }
+        
+        renderer->DrawTexturedRect(buildingTex, worldPos, 
+                                   width * 32.0f, height * 32.0f, 
+                                   color, 0.0f, 0.0f, 1.0f, 1.0f);
+    } else {
+        // Fallback to colored rect
+        Vector2 screenPos = renderer->WorldToScreen(position);
+        glm::vec3 color(0.8f, 0.4f, 0.2f);
+        if (ownerId == 1) color = glm::vec3(0.3f, 0.3f, 0.8f);
+        
+        if (state == BuildingState::BLUEPRINT) {
+            color = glm::vec3(0.5f, 0.5f, 0.5f);
+        } else if (state == BuildingState::UNDER_CONSTRUCTION) {
+            color = color * 0.7f;
+        }
+        
+        renderer->DrawRect(
+            Rect(screenPos.x, screenPos.y, width * 32, height * 32),
+            color
+        );
     }
     
-    renderer->DrawRect(
-        Rect(screenPos.x, screenPos.y, width * 32, height * 32),
-        color
-    );
-    
     // Draw selection indicator
+    Vector2 screenPos = renderer->WorldToScreen(position);
     if (selected) {
         renderer->DrawRect(
             Rect(screenPos.x - 2, screenPos.y - 2, width * 32 + 4, height * 32 + 4),
@@ -211,6 +230,16 @@ void Building::AddConstructionProgress(float amount) {
     
     constructionProgress += amount / constructionTimeTotal;
     constructionProgress = std::min(1.0f, constructionProgress);
+    
+    if (constructionProgress >= 1.0f) {
+        OnConstructionComplete();
+    }
+}
+
+void Building::SetConstructionProgress(float amount) {
+    if (state != BuildingState::UNDER_CONSTRUCTION) return;
+    
+    constructionProgress = std::min(1.0f, std::max(0.0f, amount));
     
     if (constructionProgress >= 1.0f) {
         OnConstructionComplete();

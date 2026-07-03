@@ -3,6 +3,8 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <iostream>
+#include <thread>
+#include <mutex>
 
 Game::Game() 
     : window(nullptr)
@@ -11,13 +13,33 @@ Game::Game()
     , gameTime(0)
     , currentState(GameState::MAIN_MENU)
     , previousState(GameState::MAIN_MENU)
-    , screenWidth(900)
-    , screenHeight(900)
+    , screenWidth(1920)
+    , screenHeight(1080)
     , humanPlayerId(0)
 {
 }
 
 Game::~Game() {
+}
+
+// Static resize callback
+static void WindowResizeCallback(GLFWwindow* window, int width, int height) {
+    Game* game = static_cast<Game*>(glfwGetWindowUserPointer(window));
+    if (game) {
+        game->OnWindowResize(width, height);
+    }
+}
+
+void Game::OnWindowResize(int width, int height) {
+    screenWidth = width;
+    screenHeight = height;
+    if (renderer) {
+        renderer->SetViewport(0, 0, width, height);
+        if (renderer->GetCamera()) {
+            renderer->GetCamera()->SetScreenSize(width, height);
+        }
+    }
+    glViewport(0, 0, width, height);
 }
 
 bool Game::Initialize() {
@@ -41,6 +63,10 @@ bool Game::Initialize() {
     
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
+    
+    // Set window user pointer for callbacks
+    glfwSetWindowUserPointer(window, this);
+    glfwSetWindowSizeCallback(window, WindowResizeCallback);
     
     // Initialize subsystems
     renderer = std::make_unique<Renderer>();
@@ -77,7 +103,7 @@ bool Game::Initialize() {
     // Start background music
     std::cout<<"\nThe code of music playing was here\n";
     //audioManager->PlayMusic("//media//oknelaksoms//New Volume//shit7//release//assets//audio//music//main_theme.ogg", true);
-    audioManager->PlayMusic("assets/audio/music/main_theme.ogg", true);
+    audioManager->PlayMusic("assets/audio/music/game_music.mp3", true);
     
     isRunning = true;
     return true;
@@ -188,7 +214,7 @@ void Game::PlaceStartingUnits() {
     );
     playerHut->SetPosition(playerStart.x * 32.0f, (playerStart.y + 5) * 32.0f);
     playerHut->StartConstruction();
-    //playerHut->SetConstructionProgress(1.0f); // Instant complete
+    playerHut->SetConstructionProgress(1.0f); // Instant complete
     map->AddEntity(playerHut);
     techTree->OnBuildingCompleted(humanPlayerId, BuildingType::HUT);
     
@@ -213,7 +239,7 @@ void Game::PlaceStartingUnits() {
     );
     aiHut->SetPosition(aiStart.x * 32.0f, (aiStart.y + 5) * 32.0f);
     aiHut->StartConstruction();
-    //aiHut->SetConstructionProgress(1.0f);
+    aiHut->SetConstructionProgress(1.0f);
     map->AddEntity(aiHut);
     techTree->OnBuildingCompleted(1, BuildingType::HUT);
 }
@@ -450,8 +476,6 @@ void Game::HandleGameInput() {
 void Game::Update(float deltaTime) {
     switch (CurrentGameState::CGS) {
         case GameState::MAIN_MENU:
-            //menuSystem->ShowMainMenu();
-            //menuSystem->Render(renderer.get());
         case GameState::NEW_GAME_MENU:
         case GameState::LOAD_GAME_MENU:
             menuSystem->Update(deltaTime);
@@ -461,25 +485,72 @@ void Game::Update(float deltaTime) {
             gameTime += deltaTime;
             
             if (map) {
-                map->Update(deltaTime);
+                // Always use multithreading for entity updates
+                auto allEntities = map->GetAllEntitiesShared();
+                int numThreads = std::thread::hardware_concurrency();
+                if (numThreads < 2) numThreads = 2;
+                
+                // Only parallelize if there are enough entities to justify overhead
+                if (allEntities.size() > 10) {
+                    std::vector<std::thread> threads;
+                    int chunkSize = allEntities.size() / numThreads + 1;
+                    
+                    for (int t = 0; t < numThreads; t++) {
+                        int start = t * chunkSize;
+                        int end = std::min((int)allEntities.size(), start + chunkSize);
+                        if (start >= (int)allEntities.size()) break;
+                        
+                        threads.emplace_back([&allEntities, start, end, deltaTime]() {
+                            for (int i = start; i < end; i++) {
+                                allEntities[i]->Update(deltaTime);
+                            }
+                        });
+                    }
+                    
+                    for (auto& t : threads) {
+                        t.join();
+                    }
+                } else {
+                    for (auto& entity : allEntities) {
+                        entity->Update(deltaTime);
+                    }
+                }
+                
+                // Remove dead entities (single-threaded for safety)
+                map->RemoveDeadEntities();
                 map->UpdateFogOfWar(humanPlayerId);
             }
             
-            if (commandSystem) {
-                commandSystem->Update(deltaTime);
+            // Run systems in parallel with AI updates
+            {
+                std::vector<std::thread> sysThreads;
+                
+                if (commandSystem) {
+                    sysThreads.emplace_back([this, deltaTime]() {
+                        commandSystem->Update(deltaTime);
+                    });
+                }
+                
+                if (combatSystem) {
+                    sysThreads.emplace_back([this, deltaTime]() {
+                        combatSystem->Update(deltaTime);
+                    });
+                }
+                
+                // Update AI in parallel
+                for (auto& ai : aiControllers) {
+                    sysThreads.emplace_back([&ai, deltaTime, this]() {
+                        ai->Update(deltaTime, map.get(), resourceManager.get(), 
+                                  techTree.get(), commandSystem.get());
+                    });
+                }
+                
+                for (auto& t : sysThreads) {
+                    t.join();
+                }
             }
             
-            if (combatSystem) {
-                combatSystem->Update(deltaTime);
-            }
-            
-            // Update AI
-            for (auto& ai : aiControllers) {
-                ai->Update(deltaTime, map.get(), resourceManager.get(), 
-                          techTree.get(), commandSystem.get());
-            }
-            
-            // Update audio listener position
+            // Update audio listener position (single-threaded, OpenAL context)
             if (audioManager && renderer) {
                 Vector2 cameraPos = renderer->GetCamera()->GetPosition();
                 audioManager->Update(cameraPos);
@@ -512,10 +583,13 @@ void Game::Update(float deltaTime) {
 void Game::Render() {
     renderer->Clear();
     
+    // Start ImGui frame - this must be done once per frame before any ImGui calls
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+    
     switch (CurrentGameState::CGS) {
         case GameState::MAIN_MENU:
-            //menuSystem->ShowMainMenu();
-            //menuSystem->Render(renderer.get());
         case GameState::NEW_GAME_MENU:
         case GameState::LOAD_GAME_MENU:
             menuSystem->Render(renderer.get());
@@ -532,10 +606,10 @@ void Game::Render() {
                            selectionSystem.get());
             }
 
-            // Draw selection box
+            // Draw selection box in screen space
             if (inputHandler->IsSelecting()) {
                 Rect selectionRect = inputHandler->GetSelectionRect();
-                renderer->DrawRect(selectionRect, glm::vec3(0.0f, 1.0f, 0.0f));
+                renderer->DrawScreenRect(selectionRect, glm::vec3(0.0f, 1.0f, 0.0f));
             }
             
             if (CurrentGameState::CGS == GameState::PAUSED) {
@@ -545,13 +619,16 @@ void Game::Render() {
             
         case GameState::WIN_SCREEN:
         case GameState::LOSE_SCREEN:
-            //menuSystem->Render(renderer.get());
             ShowEndScreen();
             break;
             
         default:
             break;
     }
+    
+    // End ImGui frame and render
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 void Game::CheckWinCondition() {
@@ -640,6 +717,8 @@ void Game::HandleStateTransitions() {
             default:
                 break;
         }
+        // Mark transition as handled
+        previousState = currentState;
     }
 }
 

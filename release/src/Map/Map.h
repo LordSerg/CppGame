@@ -42,7 +42,9 @@ public:
     std::vector<Entity*> GetEntitiesInRect(const Rect& rect);
     std::vector<Entity*> GetEntitiesAt(int x, int y);
     std::vector<Entity*> GetAllEntities();
+    std::vector<std::shared_ptr<Entity>> GetAllEntitiesShared();
     Entity* GetEntityById(int id);
+    void RemoveDeadEntities();
     
     // Obstacle management
     void AddObstacle(std::shared_ptr<Obstacle> obstacle);
