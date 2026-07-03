@@ -7,23 +7,23 @@
 #include <glm/glm.hpp>
 
 // Grass texture: 256x640, each tile is 32x32
-// Second block (index 1) starts at pixel x=32, y=0
-static const float GRASS_TEX_UV_X = 32.0f / 256.0f;  // 0.125
-static const float GRASS_TEX_UV_Y = 0.0f;
-static const float GRASS_TEX_UV_W = 32.0f / 256.0f;  // 0.125
-static const float GRASS_TEX_UV_H = 32.0f / 640.0f;  // 0.05
+// stb_image flips vertically, so the first block (pixel row 0) moves to bottom.
+// Block indexes (before flip): 0=transparent at y=0, 1=grass at y=32, 2=? at y=64, 3=? at y=96
+// After flip: block1 (grass, pixel y=32-64) becomes at UV y = (640-64)/640 = 0.9
+static const float TILE_UV_W = 32.0f / 256.0f;  // 0.125
+static const float TILE_UV_H = 32.0f / 640.0f;  // 0.05
+// Block 1 (grass) at pixel row 32-64 -> after flip: rows 576-608 -> UV y = 576/640 = 0.9
+static const float GRASS_TEX_UV_X = 32.0f / 256.0f;
+static const float GRASS_TEX_UV_Y = (640.0f - 64.0f) / 640.0f;
+// Block 0 (dirt?) at pixel row 0-32 -> after flip: rows 608-640 -> UV y = 608/640 = 0.95
 static const float DIRT_TEX_UV_X = 0.0f;
-static const float DIRT_TEX_UV_Y = 0.0f;
-static const float DIRT_TEX_UV_W = 32.0f / 256.0f;
-static const float DIRT_TEX_UV_H = 32.0f / 640.0f;
+static const float DIRT_TEX_UV_Y = (640.0f - 32.0f) / 640.0f;
+// Block 2 (stone?) at pixel row 64-96 -> after flip: rows 544-576 -> UV y = 544/640 = 0.85
 static const float STONE_TEX_UV_X = 64.0f / 256.0f;
-static const float STONE_TEX_UV_Y = 0.0f;
-static const float STONE_TEX_UV_W = 32.0f / 256.0f;
-static const float STONE_TEX_UV_H = 32.0f / 640.0f;
+static const float STONE_TEX_UV_Y = (640.0f - 96.0f) / 640.0f;
+// Block 3 (water?) at pixel row 96-128 -> after flip: rows 512-544 -> UV y = 512/640 = 0.8
 static const float WATER_TEX_UV_X = 96.0f / 256.0f;
-static const float WATER_TEX_UV_Y = 0.0f;
-static const float WATER_TEX_UV_W = 32.0f / 256.0f;
-static const float WATER_TEX_UV_H = 32.0f / 640.0f;
+static const float WATER_TEX_UV_Y = (640.0f - 128.0f) / 640.0f;
 
 Map::Map(MapSize size)
     : size(size)
@@ -101,18 +101,18 @@ void Map::Render(Renderer* renderer, int playerId) {
                 // Use texture with sub-rect based on tile type
                 float uvX = GRASS_TEX_UV_X;
                 float uvY = GRASS_TEX_UV_Y;
-                float uvW = GRASS_TEX_UV_W;
-                float uvH = GRASS_TEX_UV_H;
+                float uvW = TILE_UV_W;
+                float uvH = TILE_UV_H;
                 
                 switch (tile->GetType()) {
                     case TileType::GRASS: 
-                        uvX = GRASS_TEX_UV_X; break;
+                        uvX = GRASS_TEX_UV_X; uvY = GRASS_TEX_UV_Y; break;
                     case TileType::DIRT:  
-                        uvX = DIRT_TEX_UV_X; break;
+                        uvX = DIRT_TEX_UV_X; uvY = DIRT_TEX_UV_Y; break;
                     case TileType::STONE: 
-                        uvX = STONE_TEX_UV_X; break;
+                        uvX = STONE_TEX_UV_X; uvY = STONE_TEX_UV_Y; break;
                     case TileType::WATER: 
-                        uvX = WATER_TEX_UV_X; break;
+                        uvX = WATER_TEX_UV_X; uvY = WATER_TEX_UV_Y; break;
                 }
                 
                 renderer->DrawTexturedRect(grassTex, worldPos, 32.0f, 32.0f, 

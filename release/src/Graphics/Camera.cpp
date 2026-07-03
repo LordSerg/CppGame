@@ -45,8 +45,11 @@ glm::mat4 Camera::GetViewMatrix() const {
 }
 
 Vector2 Camera::ScreenToWorld(const Vector2& screenPos) const {
+    // GLFW gives Y=0 at top, Y=screenHeight at bottom.
+    // Our world has Y increasing upward, so flip Y.
+    float flippedY = screenHeight - screenPos.y;
     float x = (screenPos.x - screenWidth / 2.0f) / zoom + position.x;
-    float y = (screenPos.y - screenHeight / 2.0f) / zoom + position.y;
+    float y = (flippedY - screenHeight / 2.0f) / zoom + position.y;
     return Vector2(x, y);
 }
 

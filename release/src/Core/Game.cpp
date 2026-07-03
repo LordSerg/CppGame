@@ -387,6 +387,9 @@ void Game::ProcessInput() {
     if (CurrentGameState::CGS == GameState::PLAYING && !inputHandler->IsMouseOverUI()) {
         HandleGameInput();
     }
+    
+    // Reset scroll delta after camera has read it
+    inputHandler->ResetScrollDelta();
 }
 
 void Game::HandleGameInput() {
@@ -410,10 +413,15 @@ void Game::HandleGameInput() {
                 Vector2(selectionRect.x + selectionRect.width, 
                        selectionRect.y + selectionRect.height));
             
+            // Ensure bottomRight is actually the bottom-right (topLeft may have been swapped by flip)
+            float minX = std::min(topLeft.x, bottomRight.x);
+            float maxX = std::max(topLeft.x, bottomRight.x);
+            float minY = std::min(topLeft.y, bottomRight.y);
+            float maxY = std::max(topLeft.y, bottomRight.y);
+            
             Rect worldRect(
-                topLeft.x / 32, topLeft.y / 32,
-                (bottomRight.x - topLeft.x) / 32,
-                (bottomRight.y - topLeft.y) / 32
+                (int)(minX / 32), (int)(minY / 32),
+                (int)((maxX - minX) / 32), (int)((maxY - minY) / 32)
             );
             
             std::vector<Entity*> entities = map->GetEntitiesInRect(worldRect);
@@ -434,6 +442,11 @@ void Game::HandleGameInput() {
             } else {
                 selectionSystem->ClearSelection();
             }
+        }
+        
+        // End selection after processing
+        if (inputHandler) {
+            inputHandler->EndSelection();
         }
     }
     

@@ -40,18 +40,13 @@ void InputHandler::Update() {
     glfwGetCursorPos(window, &xpos, &ypos);
     mousePosition = Vector2(xpos, ypos);
     
-    // Handle selection box
+    // Handle selection box start
     if (IsMouseButtonPressed(MouseButton::LEFT) && !mouseOverUI) {
         selecting = true;
         selectionStart = mousePosition;
     }
-    
-    if (IsMouseButtonReleased(MouseButton::LEFT)) {
-        selecting = false;
-    }
-    
-    // Reset scroll delta after frame
-    scrollDelta = 0;
+    // Note: selecting is NOT cleared here on button release.
+    // The game code must call EndSelection() after reading the selection rect.
 }
 
 bool InputHandler::IsKeyPressed(int key) const {

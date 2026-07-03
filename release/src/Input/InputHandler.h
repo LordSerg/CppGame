@@ -33,9 +33,13 @@ public:
     // Selection box
     bool IsSelecting() const { return selecting; }
     Rect GetSelectionRect() const;
+    void EndSelection() { selecting = false; }
     
     bool IsMouseOverUI() const { return mouseOverUI; }
     void SetMouseOverUI(bool value) { mouseOverUI = value; }
+    
+    // Scroll
+    void ResetScrollDelta() { scrollDelta = 0; }
     
 private:
     GLFWwindow* window;
