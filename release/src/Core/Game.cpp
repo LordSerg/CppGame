@@ -183,6 +183,19 @@ void Game::StartNewGame(MapSize size) {
     // Place starting units and buildings
     PlaceStartingUnits();
     
+    // Initialize fog of war and camera position before first render
+    if (map) {
+        map->UpdateFogOfWar(humanPlayerId);
+    }
+    
+    // Set camera to player's starting position
+    if (renderer && renderer->GetCamera()) {
+        renderer->GetCamera()->SetPosition(Vector2(
+            50.0f * 32.0f, 
+            50.0f * 32.0f
+        ));
+    }
+    
     // Change to playing state
     ChangeState(GameState::PLAYING);
 }
@@ -485,12 +498,11 @@ void Game::Update(float deltaTime) {
             gameTime += deltaTime;
             
             if (map) {
-                // Always use multithreading for entity updates
+                // Multithreaded entity updates (safe: each entity is independent)
                 auto allEntities = map->GetAllEntitiesShared();
                 int numThreads = std::thread::hardware_concurrency();
                 if (numThreads < 2) numThreads = 2;
                 
-                // Only parallelize if there are enough entities to justify overhead
                 if (allEntities.size() > 10) {
                     std::vector<std::thread> threads;
                     int chunkSize = allEntities.size() / numThreads + 1;
@@ -516,41 +528,27 @@ void Game::Update(float deltaTime) {
                     }
                 }
                 
-                // Remove dead entities (single-threaded for safety)
+                // Single-threaded: remove dead entities and update fog
                 map->RemoveDeadEntities();
                 map->UpdateFogOfWar(humanPlayerId);
             }
             
-            // Run systems in parallel with AI updates
-            {
-                std::vector<std::thread> sysThreads;
-                
-                if (commandSystem) {
-                    sysThreads.emplace_back([this, deltaTime]() {
-                        commandSystem->Update(deltaTime);
-                    });
-                }
-                
-                if (combatSystem) {
-                    sysThreads.emplace_back([this, deltaTime]() {
-                        combatSystem->Update(deltaTime);
-                    });
-                }
-                
-                // Update AI in parallel
-                for (auto& ai : aiControllers) {
-                    sysThreads.emplace_back([&ai, deltaTime, this]() {
-                        ai->Update(deltaTime, map.get(), resourceManager.get(), 
-                                  techTree.get(), commandSystem.get());
-                    });
-                }
-                
-                for (auto& t : sysThreads) {
-                    t.join();
-                }
+            // Single-threaded systems (all share mutable state)
+            if (commandSystem) {
+                commandSystem->Update(deltaTime);
             }
             
-            // Update audio listener position (single-threaded, OpenAL context)
+            if (combatSystem) {
+                combatSystem->Update(deltaTime);
+            }
+            
+            // Update AI (single-threaded, accesses commandSystem, map, etc.)
+            for (auto& ai : aiControllers) {
+                ai->Update(deltaTime, map.get(), resourceManager.get(), 
+                          techTree.get(), commandSystem.get());
+            }
+            
+            // Update audio listener position
             if (audioManager && renderer) {
                 Vector2 cameraPos = renderer->GetCamera()->GetPosition();
                 audioManager->Update(cameraPos);
