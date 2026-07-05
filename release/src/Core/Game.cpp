@@ -364,10 +364,10 @@ void Game::ProcessInput() {
         float cameraSpeed = 500.0f * gameSpeed;
         
         if (inputHandler->IsKeyDown(GLFW_KEY_W) || inputHandler->IsKeyDown(GLFW_KEY_UP)) {
-            camera->Move(Vector2(0, -cameraSpeed * 0.016f));
+            camera->Move(Vector2(0, cameraSpeed * 0.016f));
         }
         if (inputHandler->IsKeyDown(GLFW_KEY_S) || inputHandler->IsKeyDown(GLFW_KEY_DOWN)) {
-            camera->Move(Vector2(0, cameraSpeed * 0.016f));
+            camera->Move(Vector2(0, -cameraSpeed * 0.016f));
         }
         if (inputHandler->IsKeyDown(GLFW_KEY_A) || inputHandler->IsKeyDown(GLFW_KEY_LEFT)) {
             camera->Move(Vector2(-cameraSpeed * 0.016f, 0));
