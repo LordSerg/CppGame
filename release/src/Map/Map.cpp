@@ -199,6 +199,11 @@ bool Map::CanPlaceBuilding(int x, int y, int buildingWidth, int buildingHeight) 
 }
 
 void Map::AddEntity(std::shared_ptr<Entity> entity) {
+    // Set map reference for units (needed for collision avoidance)
+    if (entity->GetType() == EntityType::UNIT) {
+        Unit* unit = static_cast<Unit*>(entity.get());
+        unit->SetMap(this);
+    }
     entities.push_back(entity);
 }
 
@@ -365,6 +370,58 @@ bool Map::IsExplored(int x, int y, int playerId) const {
 
 bool Map::IsVisible(int x, int y, int playerId) const {
     return fogOfWar->IsVisible(x, y, playerId);
+}
+
+bool Map::IsTileOccupiedBy(int x, int y, int ownerId) const {
+    if (!IsInBounds(x, y)) return true; // Out of bounds counts as occupied
+    
+    for (const auto& entity : entities) {
+        if (!entity->IsAlive()) continue;
+        if (entity->GetOwnerId() != ownerId) continue;
+        
+        Point2D pos = entity->GetGridPosition();
+        int w = entity->GetBounds().width;
+        int h = entity->GetBounds().height;
+        
+        // Check if (x,y) falls within this entity's footprint
+        if (x >= pos.x && x < pos.x + w &&
+            y >= pos.y && y < pos.y + h) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Map::IsTileOccupied(int x, int y) const {
+    if (!IsInBounds(x, y)) return true;
+    
+    for (const auto& entity : entities) {
+        if (!entity->IsAlive()) continue;
+        
+        Point2D pos = entity->GetGridPosition();
+        int w = entity->GetBounds().width;
+        int h = entity->GetBounds().height;
+        
+        if (x >= pos.x && x < pos.x + w &&
+            y >= pos.y && y < pos.y + h) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<Point2D> Map::GetOccupiedTiles(int ownerId) const {
+    std::vector<Point2D> occupied;
+    occupied.reserve(entities.size());
+    
+    for (const auto& entity : entities) {
+        if (!entity->IsAlive()) continue;
+        if (entity->GetOwnerId() != ownerId) continue;
+        
+        occupied.push_back(entity->GetGridPosition());
+    }
+    
+    return occupied;
 }
 
 void Map::GenerateTerrain() {

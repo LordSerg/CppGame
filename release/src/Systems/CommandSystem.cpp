@@ -2,6 +2,80 @@
 #include "../Map/Map.h"
 #include "../Map/Pathfinding.h"
 #include "../Entities/Building.h"
+#include <set>
+
+// Helper: generate formation positions around a center point
+static std::vector<Point2D> GenerateFormationPositions(const Point2D& center, int count, Map* map) {
+    std::vector<Point2D> positions;
+    if (count <= 0) return positions;
+    
+    // The center position goes to the first unit
+    positions.push_back(center);
+    if (count == 1) return positions;
+    
+    // Spiral/box pattern: generate positions in concentric rings around the center
+    // Ring 1: 8 neighbors (3x3 box minus center)
+    // Ring 2: 16 neighbors (5x5 box minus inner 3x3)
+    // etc.
+    
+    // We generate positions in order of distance from center
+    std::set<Point2D> usedPositions;
+    usedPositions.insert(center);
+    
+    int ring = 1;
+    while ((int)positions.size() < count) {
+        // Generate positions for this ring (a box of size (2*ring+1)x(2*ring+1) minus inner box)
+        int boxSize = 2 * ring + 1;
+        int startX = center.x - ring;
+        int startY = center.y - ring;
+        
+        std::vector<Point2D> ringPositions;
+        
+        for (int dy = 0; dy < boxSize; dy++) {
+            for (int dx = 0; dx < boxSize; dx++) {
+                int px = startX + dx;
+                int py = startY + dy;
+                
+                Point2D pos(px, py);
+                
+                // Skip if it's inside the inner box (already covered by previous rings)
+                int distFromCenter = std::max(abs(px - center.x), abs(py - center.y));
+                if (distFromCenter < ring) continue;
+                
+                // Skip if already used
+                if (usedPositions.find(pos) != usedPositions.end()) continue;
+                
+                usedPositions.insert(pos);
+                
+                // Check if this tile is walkable and not occupied by non-ally entities
+                if (map && map->IsInBounds(px, py) && map->IsWalkable(px, py)) {
+                    ringPositions.push_back(pos);
+                }
+            }
+        }
+        
+        // Sort ring positions by angle from center for a nice visual spread
+        std::sort(ringPositions.begin(), ringPositions.end(), 
+            [&center](const Point2D& a, const Point2D& b) {
+                float angleA = atan2(a.y - center.y, a.x - center.x);
+                float angleB = atan2(b.y - center.y, b.x - center.x);
+                return angleA < angleB;
+            });
+        
+        // Add to result
+        for (const auto& pos : ringPositions) {
+            if ((int)positions.size() >= count) break;
+            positions.push_back(pos);
+        }
+        
+        ring++;
+        
+        // Safety: limit ring size
+        if (ring > 20) break;
+    }
+    
+    return positions;
+}
 
 // MoveCommand implementation
 MoveCommand::MoveCommand(const Point2D& dest)
@@ -191,9 +265,28 @@ void CommandSystem::Update(float deltaTime) {
 
 void CommandSystem::IssueMove(const std::vector<Unit*>& units, 
                              const Point2D& destination, bool queue) {
-    for (Unit* unit : units) {
+    if (units.empty()) return;
+    
+    // If more than 1 unit, use formation spreading
+    if (units.size() > 1) {
+        std::vector<Point2D> formationPositions = GenerateFormationPositions(destination, units.size(), map);
+        
+        for (size_t i = 0; i < units.size(); i++) {
+            Point2D targetPos;
+            if (i < formationPositions.size()) {
+                targetPos = formationPositions[i];
+            } else {
+                // Fallback: all remaining units go to the center
+                targetPos = destination;
+            }
+            
+            auto command = std::make_shared<MoveCommand>(targetPos);
+            GiveCommandToUnit(units[i], command, queue);
+        }
+    } else {
+        // Single unit - go directly to destination
         auto command = std::make_shared<MoveCommand>(destination);
-        GiveCommandToUnit(unit, command, queue);
+        GiveCommandToUnit(units[0], command, queue);
     }
 }
 

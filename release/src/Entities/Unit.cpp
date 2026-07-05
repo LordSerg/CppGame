@@ -25,6 +25,7 @@ Unit::Unit(int id, int ownerId, UnitType unitType)
     , buildSpeed(0.1f)
     , captureTarget(nullptr)
     , captureProgress(0)
+    , mapRef(nullptr)
 {
     width = 1;
     height = 1;
@@ -282,6 +283,43 @@ void Unit::UpdateMovement(float deltaTime) {
     
     Point2D targetTile = path[currentPathIndex];
     Vector2 targetPos(targetTile.x * 32.0f + 16, targetTile.y * 32.0f + 16);
+    
+    // Collision avoidance: check if the target tile is occupied by another ally unit
+    // (not counting ourselves)
+    bool tileOccupied = false;
+    if (mapRef) {
+        Point2D currentGrid = GetGridPosition();
+        // Only check if we're not already on this tile
+        if (!(currentGrid.x == targetTile.x && currentGrid.y == targetTile.y)) {
+            // Check if any other ally unit is on this tile
+            auto entities = mapRef->GetEntitiesAt(targetTile.x, targetTile.y);
+            for (Entity* e : entities) {
+                if (e != this && e->IsAlive() && e->GetOwnerId() == ownerId) {
+                    tileOccupied = true;
+                    break;
+                }
+            }
+        }
+    }
+    
+    if (tileOccupied) {
+        // Wait - don't move into the occupied tile
+        // If we're close enough, just wait. Otherwise try to find a different path.
+        float distToTarget = position.Distance(targetPos);
+        if (distToTarget < 20.0f) {
+            // We're right next to the occupied tile, just wait
+            return;
+        }
+        
+        // We're far from the target tile but it's occupied - skip it and go to next
+        // This handles the case where the path was calculated before the tile became occupied
+        currentPathIndex++;
+        if (currentPathIndex >= path.size()) {
+            state = UnitState::IDLE;
+            path.clear();
+        }
+        return;
+    }
     
     Vector2 direction = (targetPos - position).Normalized();
     float distance = position.Distance(targetPos);

@@ -94,6 +94,9 @@ public:
     void ApplyShieldsUpgrade(int level);
     void ApplySwordsUpgrade(int level);
     
+    // Set the map reference for collision avoidance
+    void SetMap(class Map* m) { mapRef = m; }
+    
     // Serialization
     void Serialize(class SaveSystem* saveSystem) override;
     void Deserialize(class SaveSystem* saveSystem) override;
@@ -107,6 +110,9 @@ protected:
     int currentPathIndex;
     float speed; // tiles per second
     Vector2 targetPosition;
+    
+    // Map reference for collision avoidance
+    class Map* mapRef;
     
     // Combat
     int attackDamage;

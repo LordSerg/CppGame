@@ -62,6 +62,12 @@ public:
     bool IsExplored(int x, int y, int playerId) const;
     bool IsVisible(int x, int y, int playerId) const;
     
+    // Occupancy - check if a tile has any entity owned by a specific player
+    bool IsTileOccupiedBy(int x, int y, int ownerId) const;
+    bool IsTileOccupied(int x, int y) const;
+    // Get all occupied tiles for a player for collision avoidance
+    std::vector<Point2D> GetOccupiedTiles(int ownerId) const;
+    
     // Serialization
     void Serialize(class SaveSystem* saveSystem);
     void Deserialize(class SaveSystem* saveSystem);

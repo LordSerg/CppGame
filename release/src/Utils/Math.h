@@ -52,6 +52,11 @@ struct Point2D {
     bool operator!=(const Point2D& other) const {
         return !(*this == other);
     }
+    
+    bool operator<(const Point2D& other) const {
+        if (x != other.x) return x < other.x;
+        return y < other.y;
+    }
 };
 
 struct Rect {
