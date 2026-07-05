@@ -614,7 +614,8 @@ void Game::Render() {
             
             if (hud) {
                 hud->Render(renderer.get(), resourceManager.get(), 
-                           selectionSystem.get());
+                           selectionSystem.get(), map.get(), 
+                           renderer->GetCamera());
             }
 
             // Draw selection box in screen space

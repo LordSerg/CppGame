@@ -6,6 +6,9 @@
 class Renderer;
 class ResourceManager;
 class SelectionSystem;
+class Map;
+class Camera;
+class Entity;
 
 class HUD {
 public:
@@ -13,7 +16,7 @@ public:
     
     void Update(float deltaTime);
     void Render(Renderer* renderer, ResourceManager* resourceMgr, 
-               SelectionSystem* selectionSys);
+               SelectionSystem* selectionSys, Map* map, Camera* camera);
     
     void SetPlayerId(int id) { playerId = id; }
     
@@ -23,7 +26,7 @@ private:
     int playerId;
     
     void RenderResourceBar(Renderer* renderer, ResourceManager* resourceMgr);
-    void RenderMinimap(Renderer* renderer);
+    void RenderMinimap(Renderer* renderer, Map* map, Camera* camera);
     void RenderSelectionPanel(Renderer* renderer, SelectionSystem* selectionSys);
     void RenderCommandButtons(Renderer* renderer, SelectionSystem* selectionSys);
 };

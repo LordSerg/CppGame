@@ -4,6 +4,9 @@
 #include "../Systems/SelectionSystem.h"
 #include "../Entities/Unit.h"
 #include "../Entities/Building.h"
+#include "../Graphics/Camera.h"
+#include "../Map/Map.h"
+#include "../Map/FogOfWar.h"
 #include <imgui.h>
 #include <string>
 
@@ -17,15 +20,17 @@ void HUD::Update(float deltaTime) {
 }
 
 void HUD::Render(Renderer* renderer, ResourceManager* resourceMgr, 
-                SelectionSystem* selectionSys) {
+                SelectionSystem* selectionSys, Map* map, Camera* camera) {
     RenderResourceBar(renderer, resourceMgr);
-    RenderMinimap(renderer);
+    RenderMinimap(renderer, map, camera);
     RenderSelectionPanel(renderer, selectionSys);
     RenderCommandButtons(renderer, selectionSys);
 }
 
 bool HUD::IsMouseOverUI(int mouseX, int mouseY) const {
     // Check if mouse is over any UI element
+    // Minimap area (10, 60, 210, 260)
+    if (mouseX >= 10 && mouseX <= 210 && mouseY >= 60 && mouseY <= 260) return true;
     // Left panel area (1/4 of screen width) - approximate
     if (mouseX < 250) return true; // Left panel
     if (mouseY < 50) return true; // Top resource bar
@@ -55,7 +60,9 @@ void HUD::RenderResourceBar(Renderer* renderer, ResourceManager* resourceMgr) {
     ImGui::End();
 }
 
-void HUD::RenderMinimap(Renderer* renderer) {
+void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
+    if (!map || !camera) return;
+    
     int minimapSize = 200;
     int minimapX = 10;
     int minimapY = 60;
@@ -69,13 +76,133 @@ void HUD::RenderMinimap(Renderer* renderer) {
     
     ImGui::Begin("Minimap", nullptr, flags);
     
-    // Draw minimap representation
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     ImVec2 p = ImGui::GetCursorScreenPos();
     
-    draw_list->AddRectFilled(p, 
-                            ImVec2(p.x + minimapSize, p.y + minimapSize),
-                            IM_COL32(50, 50, 50, 255));
+    int mapWidth = map->GetWidth();
+    int mapHeight = map->GetHeight();
+    
+    // Scale factors: how many minimap pixels per map tile
+    float scaleX = (float)minimapSize / mapWidth;
+    float scaleY = (float)minimapSize / mapHeight;
+    
+    // Draw terrain based on fog of war
+    // We iterate over the map in steps to keep performance reasonable
+    int step = std::max(1, (mapWidth * mapHeight) / (minimapSize * minimapSize / 4));
+    step = std::max(1, step);
+    
+    for (int y = 0; y < mapHeight; y += step) {
+        for (int x = 0; x < mapWidth; x += step) {
+            // Check fog of war
+            if (!map->IsExplored(x, y, playerId)) {
+                continue; // Unexplored - don't draw anything
+            }
+            
+            // Determine color based on visibility and terrain
+            ImU32 color;
+            if (map->IsVisible(x, y, playerId)) {
+                // Visible - show as green (terrain)
+                color = IM_COL32(0, 180, 0, 255);
+            } else {
+                // Explored but not visible - show as darker green
+                color = IM_COL32(0, 80, 0, 255);
+            }
+            
+            float px = p.x + x * scaleX;
+            float py = p.y + y * scaleY;
+            float pw = std::max(1.0f, step * scaleX);
+            float ph = std::max(1.0f, step * scaleY);
+            
+            draw_list->AddRectFilled(
+                ImVec2(px, py),
+                ImVec2(px + pw, py + ph),
+                color
+            );
+        }
+    }
+    
+    // Draw entities on minimap
+    auto allEntities = map->GetAllEntities();
+    for (Entity* entity : allEntities) {
+        if (!entity->IsAlive()) continue;
+        
+        Point2D gridPos = entity->GetGridPosition();
+        
+        // Only show entities on visible tiles
+        if (!map->IsVisible(gridPos.x, gridPos.y, playerId)) continue;
+        
+        float ex = p.x + gridPos.x * scaleX;
+        float ey = p.y + gridPos.y * scaleY;
+        
+        // Entity size on minimap (at least 2x2 pixels)
+        float ew = std::max(2.0f, entity->GetBounds().width * scaleX);
+        float eh = std::max(2.0f, entity->GetBounds().height * scaleY);
+        
+        ImU32 entityColor;
+        if (entity->GetOwnerId() == playerId) {
+            // Ally - blue
+            entityColor = IM_COL32(0, 100, 255, 255);
+        } else {
+            // Foe - red
+            entityColor = IM_COL32(255, 0, 0, 255);
+        }
+        
+        draw_list->AddRectFilled(
+            ImVec2(ex, ey),
+            ImVec2(ex + ew, ey + eh),
+            entityColor
+        );
+    }
+    
+    // Draw viewport rectangle (white, unfilled)
+    if (camera) {
+        Vector2 camPos = camera->GetPosition();
+        float zoom = camera->GetZoom();
+        int screenW = renderer->GetWidth();
+        int screenH = renderer->GetHeight();
+        
+        // Calculate visible world area in pixels
+        float visibleWorldW = screenW / zoom;
+        float visibleWorldH = screenH / zoom;
+        
+        // Convert to tile coordinates
+        float viewLeft = (camPos.x - visibleWorldW / 2.0f) / 32.0f;
+        float viewTop = (camPos.y - visibleWorldH / 2.0f) / 32.0f;
+        float viewRight = (camPos.x + visibleWorldW / 2.0f) / 32.0f;
+        float viewBottom = (camPos.y + visibleWorldH / 2.0f) / 32.0f;
+        
+        // Clamp to map bounds
+        viewLeft = std::max(0.0f, viewLeft);
+        viewTop = std::max(0.0f, viewTop);
+        viewRight = std::min((float)mapWidth, viewRight);
+        viewBottom = std::min((float)mapHeight, viewBottom);
+        
+        // Convert to minimap coordinates
+        float vx = p.x + viewLeft * scaleX;
+        float vy = p.y + viewTop * scaleY;
+        float vw = (viewRight - viewLeft) * scaleX;
+        float vh = (viewBottom - viewTop) * scaleY;
+        
+        // Draw unfilled white rectangle (only perimeter)
+        draw_list->AddRect(
+            ImVec2(vx, vy),
+            ImVec2(vx + vw, vy + vh),
+            IM_COL32(255, 255, 255, 255),
+            0.0f,  // rounding
+            0,     // flags
+            1.5f   // thickness
+        );
+    }
+    
+    // Draw border around minimap
+    draw_list->AddRect(
+        p,
+        ImVec2(p.x + minimapSize, p.y + minimapSize),
+        IM_COL32(100, 100, 100, 255),
+        0.0f,
+        0,
+        1.0f
+    );
     
     ImGui::End();
 }
