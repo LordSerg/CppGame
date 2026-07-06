@@ -88,7 +88,7 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
     
     // Draw terrain based on fog of war
     // We iterate over the map in steps to keep performance reasonable
-    int step = std::max(1, (mapWidth * mapHeight) / (minimapSize * minimapSize / 4));
+    int step = std::max(1, (mapWidth * mapHeight) / (minimapSize * minimapSize / 8));
     step = std::max(1, step);
     
     for (int y = 0; y < mapHeight; y += step) {
@@ -208,8 +208,8 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
 }
 
 void HUD::RenderSelectionPanel(Renderer* renderer, SelectionSystem* selectionSys) {
-    int panelWidth = renderer->GetWidth() / 4;
-    int panelHeight = renderer->GetHeight() - 270;
+    int panelWidth = std::max(400, renderer->GetWidth() / 4);
+    int panelHeight = renderer->GetHeight() - 270 - 200;
     
     ImGui::SetNextWindowPos(ImVec2(10, 270));
     ImGui::SetNextWindowSize(ImVec2(panelWidth - 20, panelHeight));
@@ -256,7 +256,7 @@ void HUD::RenderSelectionPanel(Renderer* renderer, SelectionSystem* selectionSys
 }
 
 void HUD::RenderCommandButtons(Renderer* renderer, SelectionSystem* selectionSys) {
-    int panelWidth = renderer->GetWidth() / 4;
+    int panelWidth = std::max(400, renderer->GetWidth() / 4);
     
     ImGui::SetNextWindowPos(ImVec2(10, renderer->GetHeight() - 200));
     ImGui::SetNextWindowSize(ImVec2(panelWidth - 20, 190));
