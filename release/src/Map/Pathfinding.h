@@ -26,12 +26,12 @@ struct PathNodeComparator {
 
 class Pathfinding {
 public:
-    static std::vector<Point2D> FindPath(Map* map, Point2D start, Point2D goal, int unitSize = 1);
+    static std::vector<Point2D> FindPath(Map* map, Point2D start, Point2D goal, int unitSize = 1, int excludeUnitId = -1);
     static std::vector<Point2D> SmoothPath(const std::vector<Point2D>& path);
     
 private:
     static float Heuristic(const Point2D& a, const Point2D& b);
-    static std::vector<Point2D> GetNeighbors(const Point2D& pos, Map* map, int unitSize);
+    static std::vector<Point2D> GetNeighbors(const Point2D& pos, Map* map, int unitSize, int excludeUnitId = -1, const Point2D& goal = Point2D(-1, -1));
     static std::vector<Point2D> ReconstructPath(PathNode* endNode);
 };
 

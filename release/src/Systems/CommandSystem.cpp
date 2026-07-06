@@ -87,7 +87,8 @@ void MoveCommand::Execute(Unit* unit, Map* map) {
     if (!unit || !map) return;
     
     Point2D start = unit->GetGridPosition();
-    std::vector<Point2D> path = Pathfinding::FindPath(map, start, destination, 1);
+    // Pass unit ID so pathfinding avoids other units (but not this one)
+    std::vector<Point2D> path = Pathfinding::FindPath(map, start, destination, 1, unit->GetId());
     
     if (!path.empty()) {
         unit->SetPath(path);
@@ -139,7 +140,7 @@ void AttackCommand::Update(Unit* unit, float deltaTime, Map* map) {
         Point2D targetPos = target->GetGridPosition();
         Point2D unitPos = unit->GetGridPosition();
         
-        std::vector<Point2D> path = Pathfinding::FindPath(map, unitPos, targetPos, 1);
+        std::vector<Point2D> path = Pathfinding::FindPath(map, unitPos, targetPos, 1, unit->GetId());
         if (!path.empty()) {
             unit->SetPath(path);
         }

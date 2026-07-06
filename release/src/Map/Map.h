@@ -65,6 +65,8 @@ public:
     // Occupancy - check if a tile has any entity owned by a specific player
     bool IsTileOccupiedBy(int x, int y, int ownerId) const;
     bool IsTileOccupied(int x, int y) const;
+    // Check if a tile is occupied by a unit (not building), optionally excluding a specific unit ID
+    bool IsTileOccupiedByUnit(int x, int y, int excludeUnitId = -1) const;
     // Get all occupied tiles for a player for collision avoidance
     std::vector<Point2D> GetOccupiedTiles(int ownerId) const;
     

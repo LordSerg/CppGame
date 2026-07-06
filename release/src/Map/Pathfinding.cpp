@@ -3,13 +3,18 @@
 #include <algorithm>
 #include <cmath>
 
-std::vector<Point2D> Pathfinding::FindPath(Map* map, Point2D start, Point2D goal, int unitSize) {
+std::vector<Point2D> Pathfinding::FindPath(Map* map, Point2D start, Point2D goal, int unitSize, int excludeUnitId) {
     if (!map->IsInBounds(start.x, start.y) || !map->IsInBounds(goal.x, goal.y)) {
         return {};
     }
     
     if (!map->IsWalkable(goal.x, goal.y)) {
         return {};
+    }
+    
+    // If start equals goal, no path needed
+    if (start == goal) {
+        return {goal};
     }
     
     std::unordered_map<Point2D, PathNode*> allNodes;
@@ -38,7 +43,7 @@ std::vector<Point2D> Pathfinding::FindPath(Map* map, Point2D start, Point2D goal
         
         closedSet[current->position] = true;
         
-        std::vector<Point2D> neighbors = GetNeighbors(current->position, map, unitSize);
+        std::vector<Point2D> neighbors = GetNeighbors(current->position, map, unitSize, excludeUnitId, goal);
         
         for (const Point2D& neighborPos : neighbors) {
             if (closedSet.find(neighborPos) != closedSet.end()) {
@@ -113,7 +118,7 @@ float Pathfinding::Heuristic(const Point2D& a, const Point2D& b) {
     return abs(a.x - b.x) + abs(a.y - b.y);
 }
 
-std::vector<Point2D> Pathfinding::GetNeighbors(const Point2D& pos, Map* map, int unitSize) {
+std::vector<Point2D> Pathfinding::GetNeighbors(const Point2D& pos, Map* map, int unitSize, int excludeUnitId, const Point2D& goal) {
     std::vector<Point2D> neighbors;
     
     // 8 directions
@@ -124,9 +129,15 @@ std::vector<Point2D> Pathfinding::GetNeighbors(const Point2D& pos, Map* map, int
         int newX = pos.x + dx[i];
         int newY = pos.y + dy[i];
         
-        if (map->IsInBounds(newX, newY) && map->IsWalkable(newX, newY)) {
-            neighbors.push_back(Point2D(newX, newY));
-        }
+        if (!map->IsInBounds(newX, newY)) continue;
+        if (!map->IsWalkable(newX, newY)) continue;
+        
+        // Allow the goal tile even if occupied by another unit
+        // (so we can path all the way to our destination)
+        bool isGoal = (newX == goal.x && newY == goal.y);
+        if (!isGoal && map->IsTileOccupiedByUnit(newX, newY, excludeUnitId)) continue;
+        
+        neighbors.push_back(Point2D(newX, newY));
     }
     
     return neighbors;

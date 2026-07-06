@@ -410,6 +410,23 @@ bool Map::IsTileOccupied(int x, int y) const {
     return false;
 }
 
+bool Map::IsTileOccupiedByUnit(int x, int y, int excludeUnitId) const {
+    if (!IsInBounds(x, y)) return true;
+    
+    for (const auto& entity : entities) {
+        if (!entity->IsAlive()) continue;
+        if (entity->GetType() != EntityType::UNIT) continue;
+        if (entity->GetId() == excludeUnitId) continue;
+        
+        Point2D pos = entity->GetGridPosition();
+        // Units are 1x1 tiles
+        if (pos.x == x && pos.y == y) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::vector<Point2D> Map::GetOccupiedTiles(int ownerId) const {
     std::vector<Point2D> occupied;
     occupied.reserve(entities.size());

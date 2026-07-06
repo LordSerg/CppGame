@@ -278,23 +278,58 @@ void Unit::ApplySwordsUpgrade(int level) {
 void Unit::UpdateMovement(float deltaTime) {
     if (path.empty() || currentPathIndex >= path.size()) {
         state = UnitState::IDLE;
+        // Snap to tile top-left when idle
+        Point2D grid = GetGridPosition();
+        position = Vector2(grid.x * 32.0f, grid.y * 32.0f);
         return;
     }
     
     Point2D targetTile = path[currentPathIndex];
-    Vector2 targetPos(targetTile.x * 32.0f + 16, targetTile.y * 32.0f + 16);
+    Vector2 targetPos(targetTile.x * 32.0f, targetTile.y * 32.0f);
     
-    // Collision avoidance: check if the target tile is occupied by another ally unit
-    // (not counting ourselves)
+    // --- SEPARATION FORCE: push away from nearby units to prevent overlap ---
+    Vector2 separationForce(0, 0);
+    const float MIN_DIST = 28.0f; // Minimum allowed distance between unit centers
+    if (mapRef) {
+        // Check all entities near us
+        Point2D myGrid = GetGridPosition();
+        Rect searchRect(myGrid.x - 2, myGrid.y - 2, 5, 5);
+        auto nearby = mapRef->GetEntitiesInRect(searchRect);
+        
+        for (Entity* e : nearby) {
+            if (e == this || !e->IsAlive() || e->GetType() != EntityType::UNIT) continue;
+            
+            Vector2 diff = position - e->GetPosition();
+            float dist = diff.Length();
+            
+            if (dist > 0.0f && dist < MIN_DIST) {
+                // Push away with strength inversely proportional to distance
+                float strength = (MIN_DIST - dist) / MIN_DIST;
+                separationForce = separationForce + diff.Normalized() * strength;
+            }
+        }
+    }
+    
+    // --- MAIN MOVEMENT toward target ---
+    Vector2 direction = (targetPos - position).Normalized();
+    float distance = position.Distance(targetPos);
+    float moveDistance = speed * 32.0f * deltaTime;
+    
+    // Combine movement direction with separation force
+    Vector2 moveDir = direction;
+    if (separationForce.Length() > 0.01f) {
+        // Blend: mostly move toward target, but add separation
+        moveDir = (direction * 0.7f + separationForce * 0.3f).Normalized();
+    }
+    
+    // Check if the target tile is occupied by another unit
     bool tileOccupied = false;
     if (mapRef) {
         Point2D currentGrid = GetGridPosition();
-        // Only check if we're not already on this tile
         if (!(currentGrid.x == targetTile.x && currentGrid.y == targetTile.y)) {
-            // Check if any other ally unit is on this tile
             auto entities = mapRef->GetEntitiesAt(targetTile.x, targetTile.y);
             for (Entity* e : entities) {
-                if (e != this && e->IsAlive() && e->GetOwnerId() == ownerId) {
+                if (e != this && e->IsAlive() && e->GetType() == EntityType::UNIT) {
                     tileOccupied = true;
                     break;
                 }
@@ -302,40 +337,33 @@ void Unit::UpdateMovement(float deltaTime) {
         }
     }
     
-    if (tileOccupied) {
-        // Wait - don't move into the occupied tile
-        // If we're close enough, just wait. Otherwise try to find a different path.
-        float distToTarget = position.Distance(targetPos);
-        if (distToTarget < 20.0f) {
-            // We're right next to the occupied tile, just wait
-            return;
-        }
-        
-        // We're far from the target tile but it's occupied - skip it and go to next
-        // This handles the case where the path was calculated before the tile became occupied
+    // If the target tile is occupied and we're close to it, try to move anyway
+    // (the separation force will push us aside naturally)
+    if (tileOccupied && distance < 16.0f) {
+        // Target tile is occupied and we're right next to it.
+        // Skip to the next path node to avoid getting stuck.
         currentPathIndex++;
         if (currentPathIndex >= path.size()) {
             state = UnitState::IDLE;
-            path.clear();
+            Point2D grid = GetGridPosition();
+            position = Vector2(grid.x * 32.0f, grid.y * 32.0f);
         }
         return;
     }
     
-    Vector2 direction = (targetPos - position).Normalized();
-    float distance = position.Distance(targetPos);
-    
-    float moveDistance = speed * 32.0f * deltaTime;
-    
+    // Move the unit
     if (distance <= moveDistance) {
         position = targetPos;
         currentPathIndex++;
         
         if (currentPathIndex >= path.size()) {
             state = UnitState::IDLE;
-            path.clear();
+            // Snap to tile top-left when idle
+            Point2D grid = GetGridPosition();
+            position = Vector2(grid.x * 32.0f, grid.y * 32.0f);
         }
     } else {
-        position = position + direction * moveDistance;
+        position = position + moveDir * moveDistance;
     }
 }
 
