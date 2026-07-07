@@ -194,26 +194,30 @@ void Building::Render(Renderer* renderer) {
         );
     }
     
-    // Draw selection indicator
-    Vector2 screenPos = renderer->WorldToScreen(position);
+    // Draw selection indicator (outline only)
     if (selected) {
-        renderer->DrawRect(
-            Rect(screenPos.x - 2, screenPos.y - 2, width * 32 + 4, height * 32 + 4),
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        );
+        float bx = position.x - 2;
+        float by = position.y - 2;
+        float bw = width * 32 + 4;
+        float bh = height * 32 + 4;
+        glm::vec3 selColor(0.0f, 1.0f, 0.0f);
+        renderer->DrawLine(Vector2(bx, by), Vector2(bx + bw, by), selColor, 2.0f);
+        renderer->DrawLine(Vector2(bx + bw, by), Vector2(bx + bw, by + bh), selColor, 2.0f);
+        renderer->DrawLine(Vector2(bx + bw, by + bh), Vector2(bx, by + bh), selColor, 2.0f);
+        renderer->DrawLine(Vector2(bx, by + bh), Vector2(bx, by), selColor, 2.0f);
     }
     
     // Draw health bar
     float healthPercent = (float)currentHealth / maxHealth;
     renderer->DrawRect(
-        Rect(screenPos.x, screenPos.y - 10, width * 32 * healthPercent, 5),
+        Rect(position.x, position.y - 10, width * 32 * healthPercent, 5),
         glm::vec3(0.0f, 1.0f, 0.0f)
     );
     
     // Draw construction progress
     if (state == BuildingState::UNDER_CONSTRUCTION) {
         renderer->DrawRect(
-            Rect(screenPos.x, screenPos.y + height * 32 + 5, 
+            Rect(position.x, position.y + height * 32 + 5, 
                  width * 32 * constructionProgress, 5),
             glm::vec3(1.0f, 1.0f, 0.0f)
         );

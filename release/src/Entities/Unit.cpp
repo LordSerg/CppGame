@@ -127,31 +127,28 @@ void Unit::Render(Renderer* renderer) {
                                    0.0f, 0.0f, 1.0f, 1.0f);
     } else {
         // Fallback to colored rect
-        Vector2 screenPos = renderer->WorldToScreen(position);
         glm::vec3 color(1.0f, 0.0f, 0.0f);
         if (ownerId == 1) color = glm::vec3(0.0f, 0.0f, 1.0f);
         
         renderer->DrawRect(
-            Rect(screenPos.x, screenPos.y, 32, 32),
+            Rect(position.x, position.y, 32, 32),
             color
         );
     }
     
     // Draw selection indicator
     if (selected) {
-        Vector2 screenPos = renderer->WorldToScreen(position);
         renderer->DrawCircle(
-            Vector2(screenPos.x + 16, screenPos.y + 16),
+            Vector2(position.x + 16, position.y + 16),
             20,
             glm::vec3(0.0f, 1.0f, 0.0f)
         );
     }
     
-    // Draw health bar
-    Vector2 screenPos = renderer->WorldToScreen(position);
+    // Draw health bar above the unit
     float healthPercent = (float)currentHealth / maxHealth;
     renderer->DrawRect(
-        Rect(screenPos.x, screenPos.y - 5, 32 * healthPercent, 3),
+        Rect(position.x, position.y - 5, 32 * healthPercent, 3),
         glm::vec3(0.0f, 1.0f, 0.0f)
     );
 }

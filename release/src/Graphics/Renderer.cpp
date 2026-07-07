@@ -119,8 +119,10 @@ void Renderer::DrawSprite(const Sprite& sprite, const Vector2& position,
     model = glm::scale(model, glm::vec3(sprite.GetWidth(), sprite.GetHeight(), 1.0f));
     
     // Set uniforms
+    // Combine projection * view for proper camera transformation
+    glm::mat4 viewProj = camera->GetProjectionMatrix() * camera->GetViewMatrix();
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 
-                       1, GL_FALSE, &camera->GetProjectionMatrix()[0][0]);
+                       1, GL_FALSE, &viewProj[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 
                        1, GL_FALSE, &model[0][0]);
     glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color[0]);
@@ -217,8 +219,10 @@ void Renderer::DrawLine(const Vector2& start, const Vector2& end,
     model = glm::rotate(model, angle, glm::vec3(0.0f, 0.0f, 1.0f));
     model = glm::scale(model, glm::vec3(length, thickness, 1.0f));
     
+    // Combine projection * view for proper camera transformation
+    glm::mat4 viewProj = camera->GetProjectionMatrix() * camera->GetViewMatrix();
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 
-                       1, GL_FALSE, &camera->GetProjectionMatrix()[0][0]);
+                       1, GL_FALSE, &viewProj[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 
                        1, GL_FALSE, &model[0][0]);
     glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color[0]);

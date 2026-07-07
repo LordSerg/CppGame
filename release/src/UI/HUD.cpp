@@ -88,7 +88,7 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
     
     // Draw terrain based on fog of war
     // We iterate over the map in steps to keep performance reasonable
-    int step = std::max(1, (mapWidth * mapHeight) / (minimapSize * minimapSize / 8));
+    int step = std::max(1, (mapWidth * mapHeight) / (minimapSize * minimapSize / 2));
     step = std::max(1, step);
     
     for (int y = 0; y < mapHeight; y += step) {
@@ -109,7 +109,7 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
             }
             
             float px = p.x + x * scaleX;
-            float py = p.y + y * scaleY;
+            float py = p.y + (mapHeight - y - step) * scaleY;
             float pw = std::max(1.0f, step * scaleX);
             float ph = std::max(1.0f, step * scaleY);
             
@@ -132,7 +132,7 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
         if (!map->IsVisible(gridPos.x, gridPos.y, playerId)) continue;
         
         float ex = p.x + gridPos.x * scaleX;
-        float ey = p.y + gridPos.y * scaleY;
+        float ey = p.y + (mapHeight - gridPos.y - 1) * scaleY;
         
         // Entity size on minimap (at least 2x2 pixels)
         float ew = std::max(2.0f, entity->GetBounds().width * scaleX);
@@ -177,9 +177,9 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
         viewRight = std::min((float)mapWidth, viewRight);
         viewBottom = std::min((float)mapHeight, viewBottom);
         
-        // Convert to minimap coordinates
+        // Convert to minimap coordinates (flip Y since world Y increases upward but screen Y increases downward)
         float vx = p.x + viewLeft * scaleX;
-        float vy = p.y + viewTop * scaleY;
+        float vy = p.y + (mapHeight - viewBottom) * scaleY;
         float vw = (viewRight - viewLeft) * scaleX;
         float vh = (viewBottom - viewTop) * scaleY;
         
