@@ -2,6 +2,7 @@
 #define INPUTHANDLER_H
 
 #include "../Utils/Math.h"
+#include <cstring>
 #include <GLFW/glfw3.h>
 
 enum class MouseButton {
@@ -34,6 +35,16 @@ public:
     bool IsSelecting() const { return selecting; }
     Rect GetSelectionRect() const;
     void EndSelection() { selecting = false; }
+    
+    // Reset all input state (call when transitioning to a new game state)
+    void ResetState() {
+        selecting = false;
+        scrollDelta = 0;
+        std::memset(keyStates, 0, sizeof(keyStates));
+        std::memset(prevKeyStates, 0, sizeof(prevKeyStates));
+        std::memset(mouseButtonStates, 0, sizeof(mouseButtonStates));
+        std::memset(prevMouseButtonStates, 0, sizeof(prevMouseButtonStates));
+    }
     
     bool IsMouseOverUI() const { return mouseOverUI; }
     void SetMouseOverUI(bool value) { mouseOverUI = value; }

@@ -196,6 +196,11 @@ void Game::StartNewGame(MapSize size) {
         ));
     }
     
+    // Reset input state to prevent stale button presses from menu interaction
+    if (inputHandler) {
+        inputHandler->ResetState();
+    }
+    
     // Change to playing state
     ChangeState(GameState::PLAYING);
 }
@@ -419,9 +424,16 @@ void Game::HandleGameInput() {
             float minY = std::min(topLeft.y, bottomRight.y);
             float maxY = std::max(topLeft.y, bottomRight.y);
             
+            // Convert world coordinates to tile indices using floor/ceil
+            // to ensure the selection rect covers full tiles
+            int tileMinX = (int)std::floor(minX / 32.0f);
+            int tileMinY = (int)std::floor(minY / 32.0f);
+            int tileMaxX = (int)std::ceil(maxX / 32.0f);
+            int tileMaxY = (int)std::ceil(maxY / 32.0f);
+            
             Rect worldRect(
-                (int)(minX / 32), (int)(minY / 32),
-                (int)((maxX - minX) / 32), (int)((maxY - minY) / 32)
+                tileMinX, tileMinY,
+                tileMaxX - tileMinX, tileMaxY - tileMinY
             );
             
             std::vector<Entity*> entities = map->GetEntitiesInRect(worldRect);

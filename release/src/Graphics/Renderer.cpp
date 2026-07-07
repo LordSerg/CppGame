@@ -140,23 +140,44 @@ void Renderer::DrawSprite(const Sprite& sprite, const Vector2& position,
 }
 
 void Renderer::DrawScreenRect(const Rect& rect, const glm::vec3& color) {
+    // Draw outline only using 4 lines (top, bottom, left, right)
+    Vector2 topLeft(rect.x, rect.y);
+    Vector2 topRight(rect.x + rect.width, rect.y);
+    Vector2 bottomLeft(rect.x, rect.y + rect.height);
+    Vector2 bottomRight(rect.x + rect.width, rect.y + rect.height);
+    
+    // Use a simple line drawing approach with the screen-space projection
     glUseProgram(shaderProgram);
     
-    // Use orthographic projection for screen-space rendering
     glm::mat4 projection = glm::ortho(0.0f, (float)width, (float)height, 0.0f, -1.0f, 1.0f);
-    glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(rect.x, rect.y, 0.0f));
-    model = glm::scale(model, glm::vec3(rect.width, rect.height, 1.0f));
-    
     glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 
                        1, GL_FALSE, &projection[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 
-                       1, GL_FALSE, &model[0][0]);
-    glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color[0]);
     glUniform1i(glGetUniformLocation(shaderProgram, "useTexture"), 0);
+    glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color[0]);
     
-    glBindVertexArray(quadVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    // Draw 4 line segments using thin quads
+    struct LineSeg { Vector2 pos; float len; float angle; };
+    LineSeg lines[4] = {
+        {topLeft,     (float)rect.width,  0.0f},                          // top
+        {bottomLeft,  (float)rect.width,  0.0f},                          // bottom
+        {topLeft,     (float)rect.height, glm::radians(90.0f)},           // left
+        {topRight,    (float)rect.height, glm::radians(90.0f)}            // right
+    };
+    
+    float lineThickness = 2.0f;
+    
+    for (int i = 0; i < 4; i++) {
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(lines[i].pos.x, lines[i].pos.y, 0.0f));
+        model = glm::rotate(model, lines[i].angle, glm::vec3(0.0f, 0.0f, 1.0f));
+        model = glm::scale(model, glm::vec3(lines[i].len, lineThickness, 1.0f));
+        
+        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "model"), 
+                           1, GL_FALSE, &model[0][0]);
+        
+        glBindVertexArray(quadVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
     glBindVertexArray(0);
 }
 
