@@ -20,18 +20,30 @@ void Camera::Update(float deltaTime) {
 
 void Camera::SetPosition(const Vector2& pos) {
     position = pos;
+    if (hasBounds) {
+        ClampToBounds();
+    }
 }
 
 void Camera::Move(const Vector2& delta) {
     position = position + delta;
+    if (hasBounds) {
+        ClampToBounds();
+    }
 }
 
 void Camera::SetZoom(float z) {
     zoom = Math::Clamp(z, minZoom, maxZoom);
+    if (hasBounds) {
+        ClampToBounds();
+    }
 }
 
 void Camera::Zoom(float delta) {
     zoom = Math::Clamp(zoom + delta, minZoom, maxZoom);
+    if (hasBounds) {
+        ClampToBounds();
+    }
 }
 
 glm::mat4 Camera::GetProjectionMatrix() const {
@@ -70,10 +82,29 @@ void Camera::ClampToBounds() {
     float halfWidth = screenWidth / (2.0f * zoom);
     float halfHeight = screenHeight / (2.0f * zoom);
     
-    position.x = Math::Clamp(position.x, 
-                            bounds.x + halfWidth, 
-                            bounds.x + bounds.width - halfWidth);
-    position.y = Math::Clamp(position.y, 
-                            bounds.y + halfHeight, 
-                            bounds.y + bounds.height - halfHeight);
+    // At least 1 tile (32 world units) of the map must always be visible
+    const float minOverlap = 32.0f;
+    
+    // Calculate valid X range for camera position
+    // Left edge: viewport right edge must be at least minOverlap into the map
+    float minX = bounds.x + minOverlap - halfWidth;
+    // Right edge: viewport left edge must be at least minOverlap before the map end
+    float maxX = bounds.x + bounds.width - minOverlap + halfWidth;
+    
+    // If viewport is wider than the map, center the map in the viewport
+    if (minX > maxX) {
+        position.x = bounds.x + bounds.width / 2.0f;
+    } else {
+        position.x = Math::Clamp(position.x, minX, maxX);
+    }
+    
+    // Same for Y axis
+    float minY = bounds.y + minOverlap - halfHeight;
+    float maxY = bounds.y + bounds.height - minOverlap + halfHeight;
+    
+    if (minY > maxY) {
+        position.y = bounds.y + bounds.height / 2.0f;
+    } else {
+        position.y = Math::Clamp(position.y, minY, maxY);
+    }
 }

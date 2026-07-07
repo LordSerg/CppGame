@@ -155,6 +155,17 @@ void Map::Render(Renderer* renderer, int playerId) {
             obstacle->Render(renderer);
         }
     }
+    
+    // Draw map border (red outline) using lines around the perimeter
+    Vector2 topLeft(0, 0);
+    Vector2 topRight(width * 32.0f, 0);
+    Vector2 bottomLeft(0, height * 32.0f);
+    Vector2 bottomRight(width * 32.0f, height * 32.0f);
+    
+    renderer->DrawLine(topLeft, topRight, glm::vec3(1.0f, 0.0f, 0.0f), 3.0f);
+    renderer->DrawLine(topRight, bottomRight, glm::vec3(1.0f, 0.0f, 0.0f), 3.0f);
+    renderer->DrawLine(bottomRight, bottomLeft, glm::vec3(1.0f, 0.0f, 0.0f), 3.0f);
+    renderer->DrawLine(bottomLeft, topLeft, glm::vec3(1.0f, 0.0f, 0.0f), 3.0f);
 }
 
 Tile* Map::GetTile(int x, int y) {

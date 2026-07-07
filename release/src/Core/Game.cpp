@@ -190,10 +190,16 @@ void Game::StartNewGame(MapSize size) {
     
     // Set camera to player's starting position
     if (renderer && renderer->GetCamera()) {
-        renderer->GetCamera()->SetPosition(Vector2(
+        Camera* camera = renderer->GetCamera();
+        camera->SetPosition(Vector2(
             50.0f * 32.0f, 
             50.0f * 32.0f
         ));
+        
+        // Set camera bounds to the map dimensions in world units
+        // Map spans from (0,0) to (width*32, height*32) in world coordinates
+        Rect mapBounds(0, 0, map->GetWidth() * 32, map->GetHeight() * 32);
+        camera->SetBounds(mapBounds);
     }
     
     // Reset input state to prevent stale button presses from menu interaction
