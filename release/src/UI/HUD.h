@@ -22,8 +22,18 @@ public:
     
     bool IsMouseOverUI(int mouseX, int mouseY) const;
     
+    // Handle click on minimap - moves camera to the clicked location
+    // Returns true if the click was handled (inside minimap bounds)
+    bool HandleMinimapClick(int mouseX, int mouseY, Camera* camera, Map* map) const;
+    
 private:
     int playerId;
+    
+    // Minimap layout constants
+    static constexpr int MINIMAP_X = 10;
+    static constexpr int MINIMAP_Y = 60;
+    static constexpr int MINIMAP_SIZE = 200;
+    static constexpr int TILE_SIZE = 32;
     
     void RenderResourceBar(Renderer* renderer, ResourceManager* resourceMgr);
     void RenderMinimap(Renderer* renderer, Map* map, Camera* camera);

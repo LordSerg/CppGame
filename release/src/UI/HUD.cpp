@@ -37,6 +37,40 @@ bool HUD::IsMouseOverUI(int mouseX, int mouseY) const {
     return false;
 }
 
+bool HUD::HandleMinimapClick(int mouseX, int mouseY, Camera* camera, Map* map) const {
+    if (!camera || !map) return false;
+    
+    // Check if click is within minimap bounds
+    if (mouseX < MINIMAP_X || mouseX > MINIMAP_X + MINIMAP_SIZE ||
+        mouseY < MINIMAP_Y || mouseY > MINIMAP_Y + MINIMAP_SIZE) {
+        return false;
+    }
+    
+    int mapWidth = map->GetWidth();
+    int mapHeight = map->GetHeight();
+    
+    // Convert click position to relative coordinates within the minimap (0..1)
+    float relX = static_cast<float>(mouseX - MINIMAP_X) / MINIMAP_SIZE;
+    float relY = static_cast<float>(mouseY - MINIMAP_Y) / MINIMAP_SIZE;
+    
+    // Convert to tile coordinates (flip Y: minimap Y increases downward, map Y increases upward)
+    float tileX = relX * mapWidth;
+    float tileY = (1.0f - relY) * mapHeight;  // Flip Y
+    
+    // Clamp to valid tile range
+    tileX = Math::Clamp(tileX, 0.0f, static_cast<float>(mapWidth));
+    tileY = Math::Clamp(tileY, 0.0f, static_cast<float>(mapHeight));
+    
+    // Convert tile coordinates to world position (center of tile in pixels)
+    float worldX = tileX * TILE_SIZE + TILE_SIZE / 2.0f;
+    float worldY = tileY * TILE_SIZE + TILE_SIZE / 2.0f;
+    
+    // Move camera to this world position
+    camera->SetPosition(Vector2(worldX, worldY));
+    
+    return true;
+}
+
 void HUD::RenderResourceBar(Renderer* renderer, ResourceManager* resourceMgr) {
     const PlayerResources& res = resourceMgr->GetPlayerResources(playerId);
     

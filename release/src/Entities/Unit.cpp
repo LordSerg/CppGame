@@ -148,7 +148,7 @@ void Unit::Render(Renderer* renderer) {
     // Draw health bar above the unit
     float healthPercent = (float)currentHealth / maxHealth;
     renderer->DrawRect(
-        Rect(position.x, position.y - 5, 32 * healthPercent, 3),
+        Rect(position.x, position.y + 32, 32 * healthPercent, 3),
         glm::vec3(0.0f, 1.0f, 0.0f)
     );
 }

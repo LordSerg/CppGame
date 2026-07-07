@@ -353,6 +353,8 @@ void Game::Run() {
 }
 
 void Game::ProcessInput() {
+    // Reset mouse-over-UI flag each frame - UI systems will re-set it if needed
+    inputHandler->SetMouseOverUI(false);
     inputHandler->Update();
     
     // Check for escape key to pause
@@ -388,6 +390,21 @@ void Game::ProcessInput() {
         }
     }
 
+    // Mini-map click/drag handling (update camera while left button is held over minimap)
+    if (CurrentGameState::CGS == GameState::PLAYING && inputHandler->IsMouseButtonDown(MouseButton::LEFT)) {
+        if (hud) {
+            Vector2 mousePos = inputHandler->GetMousePosition();
+            if (hud->HandleMinimapClick(static_cast<int>(mousePos.x), static_cast<int>(mousePos.y),
+                                       renderer->GetCamera(), map.get())) {
+                // Minimap was interacted with - prevent selection system from processing
+                if (inputHandler->IsMouseButtonPressed(MouseButton::LEFT)) {
+                    inputHandler->EndSelection();
+                }
+                inputHandler->SetMouseOverUI(true);
+            }
+        }
+    }
+    
     // Unit selection and commands
     if (CurrentGameState::CGS == GameState::PLAYING && !inputHandler->IsMouseOverUI()) {
         HandleGameInput();
