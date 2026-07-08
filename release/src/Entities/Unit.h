@@ -109,6 +109,7 @@ private:
     bool ValidatePosition(const Vector2& pos) const;
     Vector2 TrySlideMovement(const Vector2& desiredVelocity, float deltaTime);
     bool TryRepath();
+    void ApplyStuckRecovery(float deltaTime);
     
     class MovementSystem* movementSystem; // Reference to movement system
     
@@ -125,6 +126,12 @@ protected:
     // Periodic repathing
     float repathTimer;
     static const float REPATH_INTERVAL; // recalculate path every N seconds
+    
+    // Stuck detection
+    float stuckTimer;
+    Vector2 lastStuckCheckPosition;
+    static const float STUCK_TIMEOUT; // seconds before considering unit stuck
+    static const float STUCK_FORCE_REPATH_TIMEOUT; // seconds before forcing repath
     
     // Map reference for collision avoidance
     class Map* mapRef;

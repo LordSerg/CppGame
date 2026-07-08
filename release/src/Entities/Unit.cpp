@@ -2,9 +2,13 @@
 #include "Building.h"
 #include "../Map/Map.h"
 #include "../Systems/CommandSystem.h"
+#include "../Systems/MovementSystem.h"
 #include "../Graphics/Renderer.h"
 
+// TODO: these numbers work good for fast game speed, but not very good for slow one
 const float Unit::REPATH_INTERVAL = 0.3f; // recalculate path every 0.3 seconds
+const float Unit::STUCK_TIMEOUT = 0.5f;   // consider stuck after 0.5s without moving
+const float Unit::STUCK_FORCE_REPATH_TIMEOUT = 1.5f; // force repath after 1.5s stuck
 
 Unit::Unit(int id, int ownerId, UnitType unitType)
     : Entity(id, EntityType::UNIT, ownerId)
@@ -29,6 +33,9 @@ Unit::Unit(int id, int ownerId, UnitType unitType)
     , repathTimer(0.0f)
     , mapRef(nullptr)
     , captureProgress(0)
+    , movementSystem(nullptr)
+    , stuckTimer(0.0f)
+    , lastStuckCheckPosition(0, 0)
 {
     width = 1;
     height = 1;
@@ -180,12 +187,15 @@ void Unit::StopCurrentAction() {
     attackTarget = nullptr;
     buildingTarget = nullptr;
     captureTarget = nullptr;
+    stuckTimer = 0.0f;
 }
 
 void Unit::MoveTo(const Point2D& destination) {
     // Path will be set by command system
     state = UnitState::MOVING;
     currentPathIndex = 0;
+    stuckTimer = 0.0f;
+    lastStuckCheckPosition = position;
 }
 
 void Unit::SetPath(const std::vector<Point2D>& newPath) {
@@ -193,6 +203,8 @@ void Unit::SetPath(const std::vector<Point2D>& newPath) {
     currentPathIndex = 0;
     if (!path.empty()) {
         state = UnitState::MOVING;
+        stuckTimer = 0.0f;
+        lastStuckCheckPosition = position;
     }
 }
 
@@ -299,6 +311,8 @@ void Unit::UpdateMovement(float deltaTime) {
         }
     }
     
+    // Stuck detection
+    ApplyStuckRecovery(deltaTime);
     
     Point2D targetTile = path[currentPathIndex];
     Vector2 targetPos(targetTile.x * 32.0f, targetTile.y * 32.0f);
@@ -310,6 +324,8 @@ void Unit::UpdateMovement(float deltaTime) {
     if (distanceToTarget < 4.0f) {
         position = targetPos;
         currentPathIndex++;
+        stuckTimer = 0.0f;
+        lastStuckCheckPosition = position;
         
         if (currentPathIndex >= path.size()) {
             state = UnitState::IDLE;
@@ -317,6 +333,9 @@ void Unit::UpdateMovement(float deltaTime) {
         }
         return;
     }
+    
+    // Save old position for spatial grid update
+    Vector2 oldPosition = position;
     
     // Calculate desired velocity
     Vector2 desiredDirection = toTarget.Normalized();
@@ -330,10 +349,9 @@ void Unit::UpdateMovement(float deltaTime) {
     
     // Validate new position
     if (ValidatePosition(newPosition)) {
-        Vector2 oldPosition = position;
         position = newPosition;
     } else {
-        // Try to slide along obstacle
+        // Try to slide along obstacle - attempt multiple slide directions
         Vector2 slideVelocity = TrySlideMovement(desiredVelocity, deltaTime);
         Vector2 slidePosition = position + slideVelocity * deltaTime;
         
@@ -342,7 +360,14 @@ void Unit::UpdateMovement(float deltaTime) {
         } else if (!TryRepath()) {
             // Can't move and can't re-path, skip this waypoint
             currentPathIndex++;
+            stuckTimer = 0.0f;
+            lastStuckCheckPosition = position;
         }
+    }
+    
+    // Update spatial grid if we have a movement system reference
+    if (movementSystem) {
+        movementSystem->UpdateUnitPosition(this, oldPosition, position);
     }
 }
 
@@ -469,12 +494,21 @@ Vector2 Unit::ApplyCollisionAvoidance(const Vector2& desiredVelocity, float delt
     const float avoidanceRadius = 48.0f; // 1.5 tiles
     const float separationWeight = 3.0f;
     const float wallAvoidanceWeight = 5.0f;
+    // New: lateral force for passing other units head-on
+    const float lateralForceWeight = 4.0f;
     
     Vector2 separationForce(0, 0);
+    Vector2 lateralForce(0, 0);
     int neighborCount = 0;
     
     // Get all entities from the map and check nearby ones
     std::vector<Entity*> allEntities = mapRef->GetAllEntities();
+    
+    // The desired direction (normalized) of where we want to go
+    Vector2 desiredDir = Vector2(0, 0);
+    if (desiredVelocity.Length() > 0.01f) {
+        desiredDir = desiredVelocity.Normalized();
+    }
     
     for (Entity* other : allEntities) {
         if (!other || !other->IsAlive()) continue;
@@ -487,12 +521,39 @@ Vector2 Unit::ApplyCollisionAvoidance(const Vector2& desiredVelocity, float delt
             // Stronger repulsion when closer
             float strength = 1.0f - (distance / avoidanceRadius);
             strength = strength * strength; // Quadratic falloff for smoother behavior
-            separationForce = separationForce + diff.Normalized() * strength;
+            
+            // Base separation pushes directly away
+            Vector2 pushDir = diff.Normalized();
+            separationForce = separationForce + pushDir * strength;
+            
+            // KEY FIX: Add lateral/sideways force so units can pass each other
+            // When two units face each other, separation pushes them both backwards (equal and opposite),
+            // cancelling out. We also need to push sideways so they can pass.
+            if (distance < avoidanceRadius * 0.7f) {
+                // Create a perpendicular vector to the push direction (sideways)
+                // This gives a rotationally-biased lateral offset
+                Vector2 perpendicular(-pushDir.y, pushDir.x);
+                
+                // Dot product tells us if we're heading towards this entity
+                float headingDot = desiredDir.x * (-pushDir.x) + desiredDir.y * (-pushDir.y);
+                
+                if (headingDot > 0.3f) {
+                    // We're heading towards this entity - apply lateral force
+                    // Alternate sides based on entity ID for deterministic behavior
+                    float sideSign = (other->GetId() % 2 == 0) ? 1.0f : -1.0f;
+                    
+                    // Scale lateral force by how much we're heading towards them
+                    float lateralStrength = strength * headingDot;
+                    lateralForce = lateralForce + perpendicular * lateralStrength * sideSign;
+                    neighborCount++;
+                }
+            }
+            
             neighborCount++;
         }
     }
     
-    // Also avoid static obstacles (buildings) more strongly
+    // Separately handle buildings (static obstacles) with stronger force but no lateral
     for (Entity* other : allEntities) {
         if (!other || !other->IsAlive()) continue;
         if (other->GetId() == id) continue;
@@ -511,13 +572,30 @@ Vector2 Unit::ApplyCollisionAvoidance(const Vector2& desiredVelocity, float delt
     
     if (neighborCount > 0) {
         separationForce = separationForce * (1.0f / neighborCount);
-        Vector2 avoidanceVelocity = desiredVelocity + separationForce * separationWeight * 32.0f;
-        
-        // Maintain speed
-        float desiredSpeed = desiredVelocity.Length();
-        if (avoidanceVelocity.Length() > 0.01f) {
-            return avoidanceVelocity.Normalized() * desiredSpeed;
+        if (lateralForce.Length() > 0.01f) {
+            lateralForce = lateralForce * (1.0f / neighborCount);
         }
+        
+        // Combine forces: separation pushes away, lateral pushes sideways to pass
+        Vector2 totalForce = separationForce * separationWeight * 32.0f;
+        totalForce = totalForce + lateralForce * lateralForceWeight * 32.0f;
+        
+        Vector2 avoidanceVelocity = desiredVelocity + totalForce;
+        
+        // Maintain speed but allow slight speed reduction when maneuvering
+        float desiredSpeed = desiredVelocity.Length();
+        float currentSpeed = avoidanceVelocity.Length();
+        if (currentSpeed > 0.01f) {
+            if (currentSpeed > desiredSpeed) {
+                avoidanceVelocity = avoidanceVelocity.Normalized() * desiredSpeed;
+            }
+            // Allow up to 40% speed reduction when navigating tight spaces
+            if (currentSpeed < desiredSpeed * 0.4f) {
+                avoidanceVelocity = avoidanceVelocity.Normalized() * (desiredSpeed * 0.4f);
+            }
+        }
+        
+        return avoidanceVelocity;
     }
     
     return desiredVelocity;
@@ -540,8 +618,9 @@ bool Unit::ValidatePosition(const Vector2& pos) const {
     // Check static barriers (buildings, obstacles) - these are always hard-blocked
     if (mapRef->IsTileBlockedByStaticEntity(gridPos.x, gridPos.y, id)) return false;
     
-    // For other units: allow slight overlap (up to 0.3 tile) so units can squeeze past each other
-    // Check if the center of the unit would be too close to another unit's center
+    // KEY FIX: Relaxed unit-to-unit collision to prevent deadlock
+    // Allow units to pass each other more easily by checking the specific tile grid,
+    // not the exact pixel position.
     std::vector<Entity*> allEntities = mapRef->GetAllEntities();
     for (Entity* other : allEntities) {
         if (!other || !other->IsAlive()) continue;
@@ -549,8 +628,9 @@ bool Unit::ValidatePosition(const Vector2& pos) const {
         if (other->GetType() != EntityType::UNIT) continue;
         
         float distance = pos.Distance(other->GetPosition());
-        // Minimum separation: 0.7 tiles (22.4 pixels) - allows passing but prevents stacking
-        if (distance < 22.0f) {
+        // Reduced minimum separation: 16 pixels (0.5 tiles) was 22 (0.7 tiles)
+        // This allows units to squeeze past each other in corridors
+        if (distance < 16.0f) {
             return false;
         }
     }
@@ -575,6 +655,35 @@ Vector2 Unit::TrySlideMovement(const Vector2& desiredVelocity, float deltaTime) 
         return yOnly;
     }
     
+    // KEY FIX: Try diagonal movements for better obstacle navigation
+    // Try moving along X * 0.5 + Y (biased slide)
+    Vector2 diag1(desiredVelocity.x * 0.5f, desiredVelocity.y);
+    testPos = position + diag1 * deltaTime;
+    if (ValidatePosition(testPos)) {
+        return diag1;
+    }
+    
+    // Try moving along X + Y * 0.5 (biased slide)
+    Vector2 diag2(desiredVelocity.x, desiredVelocity.y * 0.5f);
+    testPos = position + diag2 * deltaTime;
+    if (ValidatePosition(testPos)) {
+        return diag2;
+    }
+    
+    // Try moving along perpendicular (lateral slide)
+    Vector2 perp(-desiredVelocity.y * 0.4f, desiredVelocity.x * 0.4f);
+    testPos = position + perp * deltaTime;
+    if (ValidatePosition(testPos)) {
+        return perp;
+    }
+    
+    // Try opposite perpendicular
+    Vector2 perp2(desiredVelocity.y * 0.4f, -desiredVelocity.x * 0.4f);
+    testPos = position + perp2 * deltaTime;
+    if (ValidatePosition(testPos)) {
+        return perp2;
+    }
+    
     return Vector2(0, 0);
 }
 
@@ -595,4 +704,36 @@ bool Unit::TryRepath() {
     }
     
     return false;
+}
+
+void Unit::ApplyStuckRecovery(float deltaTime) {
+    // Track how far we've moved since last check
+    float distanceMoved = position.Distance(lastStuckCheckPosition);
+    
+    if (distanceMoved < 1.0f) {
+        // Barely moved - increment stuck timer
+        stuckTimer += deltaTime;
+    } else {
+        // We're moving, reset stuck timer
+        stuckTimer = 0.0f;
+        lastStuckCheckPosition = position;
+    }
+    
+    if (stuckTimer > STUCK_FORCE_REPATH_TIMEOUT) {
+        // Been stuck for a while - force a path recalculation
+        // This handles cases where the path is blocked by units that have moved
+        if (mapRef && !path.empty()) {
+            Point2D finalDest = path.back();
+            Point2D currentGrid = GetGridPosition();
+            if (currentGrid != finalDest) {
+                std::vector<Point2D> newPath = Pathfinding::FindPath(mapRef, currentGrid, finalDest, 1, id);
+                if (!newPath.empty() && newPath.size() > 1) {
+                    path = newPath;
+                    currentPathIndex = (path[0] == currentGrid) ? 1 : 0;
+                }
+            }
+        }
+        stuckTimer = 0.0f;
+        lastStuckCheckPosition = position;
+    }
 }
