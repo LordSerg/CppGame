@@ -100,6 +100,17 @@ public:
     // Serialization
     void Serialize(class SaveSystem* saveSystem) override;
     void Deserialize(class SaveSystem* saveSystem) override;
+
+    void SetMovementSystem(class MovementSystem* ms) { movementSystem = ms; }
+
+private:
+    // Collision avoidance helpers
+    Vector2 ApplyCollisionAvoidance(const Vector2& desiredVelocity, float deltaTime);
+    bool ValidatePosition(const Vector2& pos) const;
+    Vector2 TrySlideMovement(const Vector2& desiredVelocity, float deltaTime);
+    bool TryRepath();
+    
+    class MovementSystem* movementSystem; // Reference to movement system
     
 protected:
     UnitType unitType;
@@ -110,6 +121,10 @@ protected:
     int currentPathIndex;
     float speed; // tiles per second
     Vector2 targetPosition;
+    
+    // Periodic repathing
+    float repathTimer;
+    static const float REPATH_INTERVAL; // recalculate path every N seconds
     
     // Map reference for collision avoidance
     class Map* mapRef;

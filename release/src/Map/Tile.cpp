@@ -22,6 +22,7 @@ Tile::Tile(int x, int y, TileType type)
 
 bool Tile::IsWalkable() const {
     if (type == TileType::WATER) return false;
+    if (hasTree) return false;
     if (hasRock) return false;
     return true;
 }

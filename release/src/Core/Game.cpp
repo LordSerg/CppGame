@@ -5,6 +5,7 @@
 #include <iostream>
 #include <thread>
 #include <mutex>
+#include "../Systems/MovementSystem.h"
 
 Game::Game() 
     : window(nullptr)
@@ -182,6 +183,17 @@ void Game::StartNewGame(MapSize size) {
     
     // Place starting units and buildings
     PlaceStartingUnits();
+
+    // Initialize movement system for units
+    movementSystem = std::make_unique<MovementSystem>(map.get());
+    
+    for (auto& entity : map->GetAllEntities()) {
+        if (entity->GetType() == EntityType::UNIT) {
+            Unit* unit = static_cast<Unit*>(entity);
+            unit->SetMovementSystem(movementSystem.get());
+            movementSystem->RegisterUnit(unit);
+        }
+    }
     
     // Initialize fog of war and camera position before first render
     if (map) {
@@ -585,6 +597,11 @@ void Game::Update(float deltaTime) {
                     for (auto& entity : allEntities) {
                         entity->Update(deltaTime);
                     }
+                }
+                
+                
+                if (movementSystem) {
+                    movementSystem->Update(deltaTime);
                 }
                 
                 // Single-threaded: remove dead entities and update fog

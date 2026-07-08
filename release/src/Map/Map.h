@@ -67,6 +67,10 @@ public:
     bool IsTileOccupied(int x, int y) const;
     // Check if a tile is occupied by a unit (not building), optionally excluding a specific unit ID
     bool IsTileOccupiedByUnit(int x, int y, int excludeUnitId = -1) const;
+    // Check if a tile is blocked by any entity (unit, building, or obstacle), optionally excluding a specific entity ID
+    bool IsTileBlockedByAnyEntity(int x, int y, int excludeEntityId = -1) const;
+    // Check if a tile is occupied by a building or obstacle (static barriers) only
+    bool IsTileBlockedByStaticEntity(int x, int y, int excludeEntityId = -1) const;
     // Get all occupied tiles for a player for collision avoidance
     std::vector<Point2D> GetOccupiedTiles(int ownerId) const;
     

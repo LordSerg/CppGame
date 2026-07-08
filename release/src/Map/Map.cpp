@@ -131,6 +131,15 @@ void Map::Render(Renderer* renderer, int playerId) {
                 renderer->DrawRect(Rect((int)worldPos.x, (int)worldPos.y, 32, 32), tileColor);
             }
             
+            // DEBUG: Highlight barrier tiles in red (water, trees, rocks)
+            if (tile) {
+                bool isBarrier = (tile->GetType() == TileType::WATER || tile->HasTree() || tile->HasRock());
+                if (isBarrier) {
+                    renderer->DrawRect(Rect((int)worldPos.x, (int)worldPos.y, 32, 32), 
+                                     glm::vec3(0.5f, 0.0f, 0.0f));
+                }
+            }
+            
             // Apply fog overlay
             if (!IsVisible(x, y, playerId)) {
                 renderer->DrawRect(Rect((int)worldPos.x, (int)worldPos.y, 32, 32), 
@@ -435,6 +444,66 @@ bool Map::IsTileOccupiedByUnit(int x, int y, int excludeUnitId) const {
             return true;
         }
     }
+    return false;
+}
+
+bool Map::IsTileBlockedByAnyEntity(int x, int y, int excludeEntityId) const {
+    if (!IsInBounds(x, y)) return true;
+    
+    // Check all entities (units, buildings, obstacles)
+    for (const auto& entity : entities) {
+        if (!entity->IsAlive()) continue;
+        if (entity->GetId() == excludeEntityId) continue;
+        
+        Point2D pos = entity->GetGridPosition();
+        int w = entity->GetBounds().width;
+        int h = entity->GetBounds().height;
+        
+        // Check if (x,y) falls within this entity's footprint
+        if (x >= pos.x && x < pos.x + w &&
+            y >= pos.y && y < pos.y + h) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+bool Map::IsTileBlockedByStaticEntity(int x, int y, int excludeEntityId) const {
+    if (!IsInBounds(x, y)) return true;
+    
+    // Check only buildings and obstacles (static barriers)
+    for (const auto& entity : entities) {
+        if (!entity->IsAlive()) continue;
+        if (entity->GetId() == excludeEntityId) continue;
+        // Only buildings and obstacles are static barriers
+        if (entity->GetType() != EntityType::BUILDING) continue;
+        
+        Point2D pos = entity->GetGridPosition();
+        int w = entity->GetBounds().width;
+        int h = entity->GetBounds().height;
+        
+        if (x >= pos.x && x < pos.x + w &&
+            y >= pos.y && y < pos.y + h) {
+            return true;
+        }
+    }
+    
+    // Also check obstacles list
+    for (const auto& obstacle : obstacles) {
+        if (!obstacle->IsAlive()) continue;
+        if (obstacle->GetId() == excludeEntityId) continue;
+        
+        Point2D pos = obstacle->GetGridPosition();
+        int w = obstacle->GetBounds().width;
+        int h = obstacle->GetBounds().height;
+        
+        if (x >= pos.x && x < pos.x + w &&
+            y >= pos.y && y < pos.y + h) {
+            return true;
+        }
+    }
+    
     return false;
 }
 

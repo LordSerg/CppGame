@@ -37,6 +37,8 @@ public:
     // Window resize (public for callback)
     void OnWindowResize(int width, int height);
 
+    std::unique_ptr<MovementSystem> movementSystem;
+
 private:
     void ProcessInput();
     void Update(float deltaTime);

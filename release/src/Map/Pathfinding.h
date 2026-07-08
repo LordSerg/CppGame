@@ -27,7 +27,7 @@ struct PathNodeComparator {
 class Pathfinding {
 public:
     static std::vector<Point2D> FindPath(Map* map, Point2D start, Point2D goal, int unitSize = 1, int excludeUnitId = -1);
-    static std::vector<Point2D> SmoothPath(const std::vector<Point2D>& path);
+    static std::vector<Point2D> SmoothPath(const std::vector<Point2D>& path, Map* map = nullptr, int excludeEntityId = -1);
     
 private:
     static float Heuristic(const Point2D& a, const Point2D& b);

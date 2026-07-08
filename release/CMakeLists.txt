@@ -68,6 +68,7 @@ file(GLOB_RECURSE SOURCES
     src/Serialization/SaveSystem.cpp
     src/Systems/CombatSystem.cpp
     src/Systems/CommandSystem.cpp
+    src/Systems/MovementSystem.cpp
     src/Systems/PopulationSystem.cpp
     src/Systems/ResourceManager.cpp
     src/Systems/SelectionSystem.cpp
@@ -103,6 +104,7 @@ file(GLOB_RECURSE HEADERS
     src/Serialization/SaveSystem.h
     src/Systems/CombatSystem.h
     src/Systems/CommandSystem.h
+    src/Systems/MovementSystem.h
     src/Systems/PopulationSystem.h
     src/Systems/ResourceManager.h
     src/Systems/SelectionSystem.h
