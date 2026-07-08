@@ -37,12 +37,17 @@ bool HUD::IsMouseOverUI(int mouseX, int mouseY) const {
     return false;
 }
 
+bool HUD::IsOverMinimap(int mouseX, int mouseY) const {
+    int delta = 10;
+    return (mouseX >= MINIMAP_X - delta && mouseX <= MINIMAP_X + MINIMAP_SIZE + delta &&
+            mouseY >= MINIMAP_Y - delta && mouseY <= MINIMAP_Y + MINIMAP_SIZE + delta);
+}
+
 bool HUD::HandleMinimapClick(int mouseX, int mouseY, Camera* camera, Map* map) const {
     if (!camera || !map) return false;
     
     // Check if click is within minimap bounds
-    if (mouseX < MINIMAP_X || mouseX > MINIMAP_X + MINIMAP_SIZE ||
-        mouseY < MINIMAP_Y || mouseY > MINIMAP_Y + MINIMAP_SIZE) {
+    if (!IsOverMinimap(mouseX, mouseY)) {
         return false;
     }
     
@@ -97,7 +102,6 @@ void HUD::RenderResourceBar(Renderer* renderer, ResourceManager* resourceMgr) {
 void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
     if (!map || !camera) return;
     
-    int minimapSize = 200;
     int minimapX = 10;
     int minimapY = 60;
     
@@ -124,7 +128,12 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
     // We iterate over the map in steps to keep performance reasonable
     int step = std::max(1, (mapWidth * mapHeight) / (minimapSize * minimapSize / 2));
     step = std::max(1, step);
-    
+
+
+    //for calibration of s
+    p.x = p.x - static_cast<float>(step)/2 - 2;
+    p.y = p.y - static_cast<float>(step)/2 - 2;
+
     for (int y = 0; y < mapHeight; y += step) {
         for (int x = 0; x < mapWidth; x += step) {
             // Check fog of war
@@ -142,7 +151,7 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
                 color = IM_COL32(0, 80, 0, 255);
             }
             
-            float px = p.x + x * scaleX;
+            float px = p.x + (x) * scaleX;
             float py = p.y + (mapHeight - y - step) * scaleY;
             float pw = std::max(1.0f, step * scaleX);
             float ph = std::max(1.0f, step * scaleY);
@@ -165,8 +174,8 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
         // Only show entities on visible tiles
         if (!map->IsVisible(gridPos.x, gridPos.y, playerId)) continue;
         
-        float ex = p.x + gridPos.x * scaleX;
-        float ey = p.y + (mapHeight - gridPos.y - 1) * scaleY;
+        float ex = p.x + (gridPos.x - 1) * scaleX;
+        float ey = p.y + (mapHeight - gridPos.y - 2) * scaleY;
         
         // Entity size on minimap (at least 2x2 pixels)
         float ew = std::max(2.0f, entity->GetBounds().width * scaleX);
@@ -212,8 +221,8 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
         viewBottom = std::min((float)mapHeight, viewBottom);
         
         // Convert to minimap coordinates (flip Y since world Y increases upward but screen Y increases downward)
-        float vx = p.x + viewLeft * scaleX;
-        float vy = p.y + (mapHeight - viewBottom) * scaleY;
+        float vx = p.x + (viewLeft - 1) * scaleX;
+        float vy = p.y + (mapHeight - viewBottom - 1) * scaleY;
         float vw = (viewRight - viewLeft) * scaleX;
         float vh = (viewBottom - viewTop) * scaleY;
         
@@ -243,7 +252,7 @@ void HUD::RenderMinimap(Renderer* renderer, Map* map, Camera* camera) {
 
 void HUD::RenderSelectionPanel(Renderer* renderer, SelectionSystem* selectionSys) {
     int panelWidth = std::max(400, renderer->GetWidth() / 4);
-    int panelHeight = renderer->GetHeight() - 270 - 200;
+    int panelHeight = renderer->GetHeight() - 270 - minimapSize;
     
     ImGui::SetNextWindowPos(ImVec2(10, 270));
     ImGui::SetNextWindowSize(ImVec2(panelWidth - 20, panelHeight));

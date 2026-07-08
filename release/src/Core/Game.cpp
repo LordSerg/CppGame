@@ -411,6 +411,17 @@ void Game::ProcessInput() {
         }
     }
     
+    // When left mouse button is released over the minimap, prevent selection clearing
+    if (CurrentGameState::CGS == GameState::PLAYING && inputHandler->IsMouseButtonReleased(MouseButton::LEFT)) {
+        if (hud) {
+            Vector2 mousePos = inputHandler->GetMousePosition();
+            if (hud->IsOverMinimap(static_cast<int>(mousePos.x), static_cast<int>(mousePos.y))) {
+                inputHandler->SetMouseOverUI(true);
+                inputHandler->EndSelection();
+            }
+        }
+    }
+    
     // Unit selection and commands
     if (CurrentGameState::CGS == GameState::PLAYING && !inputHandler->IsMouseOverUI()) {
         HandleGameInput();

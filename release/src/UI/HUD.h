@@ -10,9 +10,11 @@ class Map;
 class Camera;
 class Entity;
 
+
 class HUD {
-public:
+    public:
     HUD();
+    int minimapSize = 200;
     
     void Update(float deltaTime);
     void Render(Renderer* renderer, ResourceManager* resourceMgr, 
@@ -21,6 +23,9 @@ public:
     void SetPlayerId(int id) { playerId = id; }
     
     bool IsMouseOverUI(int mouseX, int mouseY) const;
+    
+    // Check if a point is over the minimap (without moving the camera)
+    bool IsOverMinimap(int mouseX, int mouseY) const;
     
     // Handle click on minimap - moves camera to the clicked location
     // Returns true if the click was handled (inside minimap bounds)
