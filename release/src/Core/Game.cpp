@@ -229,14 +229,15 @@ void Game::PlaceStartingUnits() {
     Point2D aiStart(450, 450);
     
     // Player starting units
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 10; i++) {
         auto peasant = std::make_shared<Peasant>(
             map->GetNextEntityId(), 
             humanPlayerId
         );
+        // Set position to TILE CENTER (tile * 32 + 16)
         peasant->SetPosition(
-            (playerStart.x + i * 2) * 32.0f, 
-            playerStart.y * 32.0f
+            (playerStart.x + i * 2) * 32.0f + 16.0f, 
+            playerStart.y * 32.0f + 16.0f
         );
         map->AddEntity(peasant);
         populationSystem->OnUnitCreated(humanPlayerId);
@@ -248,6 +249,7 @@ void Game::PlaceStartingUnits() {
         humanPlayerId,
         BuildingType::HUT
     );
+    // Buildings can stay at corner since they're multi-tile
     playerHut->SetPosition(playerStart.x * 32.0f, (playerStart.y + 5) * 32.0f);
     playerHut->StartConstruction();
     playerHut->SetConstructionProgress(1.0f); // Instant complete
@@ -258,10 +260,12 @@ void Game::PlaceStartingUnits() {
     for (int i = 0; i < 5; i++) {
         auto peasant = std::make_shared<Peasant>(
             map->GetNextEntityId(), 
-            1); // AI player ID
+            1 // AI player ID
+        );
+        // Set position to TILE CENTER
         peasant->SetPosition(
-            (aiStart.x + i * 2) * 32.0f, 
-            aiStart.y * 32.0f
+            (aiStart.x + i * 2) * 32.0f + 16.0f, 
+            aiStart.y * 32.0f + 16.0f
         );
         map->AddEntity(peasant);
         populationSystem->OnUnitCreated(1);

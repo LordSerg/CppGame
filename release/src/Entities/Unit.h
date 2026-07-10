@@ -103,6 +103,10 @@ public:
 
     void SetMovementSystem(class MovementSystem* ms) { movementSystem = ms; }
 
+    bool IsWaitingForPath() const { return isWaitingForPath; }
+    void SetWaitingForPath(bool waiting) { isWaitingForPath = waiting; }
+    const std::vector<Point2D>& GetPath() const { return path; }
+
 private:
     // Collision avoidance helpers
     Vector2 ApplyCollisionAvoidance(const Vector2& desiredVelocity, float deltaTime);
@@ -112,6 +116,16 @@ private:
     void ApplyStuckRecovery(float deltaTime);
     
     class MovementSystem* movementSystem; // Reference to movement system
+
+    bool IsTileOccupiedByOtherUnit(const Point2D& tile) const;
+    Unit* GetUnitAtTile(const Point2D& tile) const;
+    Vector2 ApplySmartAvoidance(const Vector2& desiredVelocity, float deltaTime);
+    bool TryAlternativeMovement(const Vector2& desiredVelocity, float deltaTime);
+    
+    float waitTimer = 0.0f;
+    const float MAX_WAIT_TIME = 2.0f; // Wait for other units before repathing
+    bool isWaitingForPath = false;
+    Point2D blockedByUnit; // Which tile has a blocking unit
     
 protected:
     UnitType unitType;
