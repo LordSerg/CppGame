@@ -5,6 +5,8 @@
 #include <vector>
 #include <queue>
 #include <unordered_map>
+#include <memory>
+#include <unordered_set>
 
 class Map;
 
@@ -26,16 +28,35 @@ struct PathNodeComparator {
 
 class Pathfinding {
 public:
-    static std::vector<Point2D> FindPath(Map* map, Point2D start, Point2D goal, int unitSize = 1, int excludeUnitId = -1);
-    static std::vector<Point2D> SmoothPath(const std::vector<Point2D>& path, Map* map = nullptr, int excludeEntityId = -1);
+    // Main pathfinding function
+    static std::vector<Point2D> FindPath(Map* map, Point2D start, Point2D goal, 
+                                         int unitSize = 1, int excludeUnitId = -1);
+    
+    // Smooth path to reduce waypoints
+    static std::vector<Point2D> SmoothPath(const std::vector<Point2D>& path, 
+                                          Map* map, int excludeEntityId = -1);
+    
+    // Check if path is still valid (no new obstacles)
+    static bool IsPathValid(const std::vector<Point2D>& path, Map* map, 
+                           int excludeEntityId = -1);
+    
+    // Find nearest walkable tile to a target
+    static Point2D FindNearestWalkable(Map* map, const Point2D& target, 
+                                      int maxSearchRadius = 10);
     
 private:
     static float Heuristic(const Point2D& a, const Point2D& b);
-    static std::vector<Point2D> GetNeighbors(const Point2D& pos, Map* map, int unitSize, int excludeUnitId = -1, const Point2D& goal = Point2D(-1, -1));
+    static std::vector<Point2D> GetNeighbors(const Point2D& pos, Map* map, 
+                                            int unitSize, int excludeUnitId, 
+                                            const Point2D& goal);
     static std::vector<Point2D> ReconstructPath(PathNode* endNode);
+    
+    // Line of sight check for path smoothing
+    static bool HasLineOfSight(Map* map, const Point2D& start, 
+                              const Point2D& end, int excludeEntityId);
 };
 
-// Hash function for Point2D to use in unordered_map
+// Hash function for Point2D
 namespace std {
     template<>
     struct hash<Point2D> {
