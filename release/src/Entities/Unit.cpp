@@ -302,29 +302,36 @@ void Unit::UpdateMovement(float deltaTime) {
     if (isWaitingForPath) {
         waitTimer += deltaTime;
         
-        if (waitTimer > 0.3f) { // Check frequently
+        if (waitTimer > 0.3f) {
             Point2D targetTile = path[currentPathIndex];
             
             if (!IsTileOccupiedByOtherUnit(targetTile)) {
-                // Path is clear now
                 isWaitingForPath = false;
                 waitTimer = 0.0f;
             } else if (waitTimer > MAX_WAIT_TIME) {
-                // Waited too long, try to find alternate route
+                // KEY FIX: Destination Crowding Check
                 Point2D finalDest = path.back();
-                Point2D currentGrid = GetGridPosition();
+                Vector2 finalDestPos(finalDest.x * 32.0f + 16.0f, finalDest.y * 32.0f + 16.0f);
                 
+                // If we are waiting, but we are within 1.5 tiles of the destination, just stop.
+                if (position.Distance(finalDestPos) < 48.0f) {
+                    state = UnitState::IDLE;
+                    path.clear();
+                    isWaitingForPath = false;
+                    return;
+                }
+                
+                // Otherwise, try to find alternate route
+                Point2D currentGrid = GetGridPosition();
                 std::vector<Point2D> newPath = Pathfinding::FindPath(
                     mapRef, currentGrid, finalDest, 1, id);
                 
                 if (!newPath.empty() && newPath != path) {
-                    // Found a different path
                     path = newPath;
                     currentPathIndex = 0;
                     isWaitingForPath = false;
                     waitTimer = 0.0f;
                 } else {
-                    // No alternate path, give up
                     state = UnitState::IDLE;
                     path.clear();
                     isWaitingForPath = false;
@@ -333,6 +340,7 @@ void Unit::UpdateMovement(float deltaTime) {
         }
         return;
     }
+
     
     // Periodic repathing for static obstacles only
     repathTimer += deltaTime;
@@ -368,10 +376,20 @@ void Unit::UpdateMovement(float deltaTime) {
         stuckTimer = 0.0f;
         lastStuckCheckPosition = position;
     } else if (stuckTimer > STUCK_FORCE_REPATH_TIMEOUT) {
-        // Been stuck - try alternate route
+        // KEY FIX: Destination Crowding Check
         Point2D finalDest = path.back();
-        Point2D currentGrid = GetGridPosition();
+        Vector2 finalDestPos(finalDest.x * 32.0f + 16.0f, finalDest.y * 32.0f + 16.0f);
         
+        // If we are stuck, but we are within 1.5 tiles of the destination, we've arrived.
+        if (position.Distance(finalDestPos) < 48.0f) {
+            state = UnitState::IDLE;
+            path.clear();
+            stuckTimer = 0.0f;
+            return;
+        }
+
+        // Been stuck - try alternate route
+        Point2D currentGrid = GetGridPosition();
         std::vector<Point2D> newPath = Pathfinding::FindPath(
             mapRef, currentGrid, finalDest, 1, id);
         
@@ -496,6 +514,12 @@ Vector2 Unit::ApplySmartAvoidance(const Vector2& desiredVelocity, float deltaTim
             // Add steering force to go AROUND the obstacle, not just away from it
             // Perpendicular vector to the obstacle
             Vector2 perpendicular(-pushDir.y, pushDir.x);
+
+            // KEY FIX: Deterministic tie-breaker for head-on collisions
+            // Ensure two units facing each other pick opposite sides to pass
+            if (id > other->GetId()) {
+                perpendicular = Vector2(pushDir.y, -pushDir.x);
+            }
             
             // Choose direction based on which side is more open
             Vector2 leftOption = position + perpendicular * 20.0f;
@@ -884,7 +908,7 @@ bool Unit::ValidatePosition(const Vector2& pos) const {
     if (mapRef->IsTileBlockedByStaticEntity(gridPos.x, gridPos.y, id)) return false;
     
     // Check edge samples to prevent clipping into barriers
-    const float checkRadius = 8.0f;
+    const float checkRadius = 3.0f;
     const int checkPoints = 8;
     
     for (int i = 0; i < checkPoints; i++) {
@@ -899,15 +923,19 @@ bool Unit::ValidatePosition(const Vector2& pos) const {
         if (mapRef->IsTileBlockedByStaticEntity(checkGrid.x, checkGrid.y, id)) return false;
     }
     
-    // Unit collision - strict minimum distance
+    // KEY FIX: The Overlap Trap Resolution
     std::vector<Entity*> allEntities = mapRef->GetAllEntities();
     for (Entity* other : allEntities) {
         if (!other || !other->IsAlive()) continue;
         if (other->GetId() == id) continue;
         if (other->GetType() != EntityType::UNIT) continue;
         
-        float distance = pos.Distance(other->GetPosition());
-        if (distance < 20.0f) { // 0.625 tiles minimum
+        float newDist = pos.Distance(other->GetPosition());
+        float currentDist = position.Distance(other->GetPosition());
+        
+        // Strict minimum distance, BUT allow movement if it INCREASES separation.
+        // This means if they are already stuck/overlapping, they are allowed to walk away!
+        if (newDist < 20.0f && newDist <= currentDist) {
             return false;
         }
     }

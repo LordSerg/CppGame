@@ -229,7 +229,7 @@ void Game::PlaceStartingUnits() {
     Point2D aiStart(450, 450);
     
     // Player starting units
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 9; i++) {
         auto peasant = std::make_shared<Peasant>(
             map->GetNextEntityId(), 
             humanPlayerId
