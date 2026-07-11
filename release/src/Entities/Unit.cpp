@@ -36,9 +36,9 @@ Unit::Unit(int id, int ownerId, UnitType unitType)
     , movementSystem(nullptr)
     , stuckTimer(0.0f)
     , lastStuckCheckPosition(0, 0)
-    , waitTimer(0.0f)
-    , isWaitingForPath(false)
-    , blockedByUnit(-1, -1)
+    , collisionWaitTimer(0.0f)
+    , collidingWithUnitId(-1)
+    , shouldStepAside(false)
 {
     width = 1;
     height = 1;
@@ -192,14 +192,19 @@ void Unit::StopCurrentAction() {
     buildingTarget = nullptr;
     captureTarget = nullptr;
     stuckTimer = 0.0f;
+    collisionWaitTimer = 0.0f;
+    collidingWithUnitId = -1;
+    shouldStepAside = false;
 }
 
 void Unit::MoveTo(const Point2D& destination) {
-    // Path will be set by command system
     state = UnitState::MOVING;
     currentPathIndex = 0;
     stuckTimer = 0.0f;
     lastStuckCheckPosition = position;
+    collisionWaitTimer = 0.0f;
+    collidingWithUnitId = -1;
+    shouldStepAside = false;
 }
 
 void Unit::SetPath(const std::vector<Point2D>& newPath) {
@@ -209,6 +214,9 @@ void Unit::SetPath(const std::vector<Point2D>& newPath) {
         state = UnitState::MOVING;
         stuckTimer = 0.0f;
         lastStuckCheckPosition = position;
+        collisionWaitTimer = 0.0f;
+        collidingWithUnitId = -1;
+        shouldStepAside = false;
     }
 }
 
@@ -294,64 +302,23 @@ void Unit::ApplySwordsUpgrade(int level) {
 void Unit::UpdateMovement(float deltaTime) {
     if (path.empty() || currentPathIndex >= path.size()) {
         state = UnitState::IDLE;
-        isWaitingForPath = false;
+        collisionWaitTimer = 0.0f;
+        collidingWithUnitId = -1;
+        shouldStepAside = false;
         return;
     }
     
-    // If we're waiting for a path to clear
-    if (isWaitingForPath) {
-        waitTimer += deltaTime;
-        
-        if (waitTimer > 0.3f) {
-            Point2D targetTile = path[currentPathIndex];
-            
-            if (!IsTileOccupiedByOtherUnit(targetTile)) {
-                isWaitingForPath = false;
-                waitTimer = 0.0f;
-            } else if (waitTimer > MAX_WAIT_TIME) {
-                // KEY FIX: Destination Crowding Check
-                Point2D finalDest = path.back();
-                Vector2 finalDestPos(finalDest.x * 32.0f + 16.0f, finalDest.y * 32.0f + 16.0f);
-                
-                // If we are waiting, but we are within 1.5 tiles of the destination, just stop.
-                if (position.Distance(finalDestPos) < 48.0f) {
-                    state = UnitState::IDLE;
-                    path.clear();
-                    isWaitingForPath = false;
-                    return;
-                }
-                
-                // Otherwise, try to find alternate route
-                Point2D currentGrid = GetGridPosition();
-                std::vector<Point2D> newPath = Pathfinding::FindPath(
-                    mapRef, currentGrid, finalDest, 1, id);
-                
-                if (!newPath.empty() && newPath != path) {
-                    path = newPath;
-                    currentPathIndex = 0;
-                    isWaitingForPath = false;
-                    waitTimer = 0.0f;
-                } else {
-                    state = UnitState::IDLE;
-                    path.clear();
-                    isWaitingForPath = false;
-                }
-            }
-        }
-        return;
-    }
-
-    
-    // Periodic repathing for static obstacles only
+    // Periodic repathing - only for static obstacles (buildings, walls, etc.)
     repathTimer += deltaTime;
     if (repathTimer >= REPATH_INTERVAL && mapRef && !path.empty()) {
         repathTimer = 0.0f;
         Point2D finalDest = path.back();
         Point2D currentGrid = GetGridPosition();
         
-        // Check if path is blocked by NEW static obstacles
+        // Check only for NEW static obstacles
         bool needsRepath = false;
-        for (size_t i = currentPathIndex; i < path.size(); i++) {
+        size_t checkEnd = std::min(currentPathIndex + 3, static_cast<int>(path.size()));
+        for (size_t i = currentPathIndex; i < checkEnd; i++) {
             if (mapRef->IsTileBlockedByStaticEntity(path[i].x, path[i].y, id)) {
                 needsRepath = true;
                 break;
@@ -361,14 +328,14 @@ void Unit::UpdateMovement(float deltaTime) {
         if (needsRepath && currentGrid != finalDest) {
             std::vector<Point2D> newPath = Pathfinding::FindPath(
                 mapRef, currentGrid, finalDest, 1, id);
-            if (!newPath.empty()) {
+            if (!newPath.empty() && newPath.size() > 1) {
                 path = newPath;
                 currentPathIndex = 0;
             }
         }
     }
     
-    // Stuck detection
+    // Simple stuck detection
     stuckTimer += deltaTime;
     float distanceMoved = position.Distance(lastStuckCheckPosition);
     
@@ -376,11 +343,10 @@ void Unit::UpdateMovement(float deltaTime) {
         stuckTimer = 0.0f;
         lastStuckCheckPosition = position;
     } else if (stuckTimer > STUCK_FORCE_REPATH_TIMEOUT) {
-        // KEY FIX: Destination Crowding Check
         Point2D finalDest = path.back();
         Vector2 finalDestPos(finalDest.x * 32.0f + 16.0f, finalDest.y * 32.0f + 16.0f);
         
-        // If we are stuck, but we are within 1.5 tiles of the destination, we've arrived.
+        // If close enough to destination, just stop
         if (position.Distance(finalDestPos) < 48.0f) {
             state = UnitState::IDLE;
             path.clear();
@@ -388,17 +354,18 @@ void Unit::UpdateMovement(float deltaTime) {
             return;
         }
 
-        // Been stuck - try alternate route
+        // Try to repath once
         Point2D currentGrid = GetGridPosition();
         std::vector<Point2D> newPath = Pathfinding::FindPath(
             mapRef, currentGrid, finalDest, 1, id);
         
-        if (!newPath.empty()) {
+        if (!newPath.empty() && newPath.size() > 1) {
             path = newPath;
             currentPathIndex = 0;
             stuckTimer = 0.0f;
             lastStuckCheckPosition = position;
         } else {
+            // No path - give up
             state = UnitState::IDLE;
             path.clear();
         }
@@ -425,54 +392,147 @@ void Unit::UpdateMovement(float deltaTime) {
     Vector2 desiredDirection = toTarget.Normalized();
     Vector2 desiredVelocity = desiredDirection * (speed * 32.0f);
     
-    // Apply smart collision avoidance that steers around obstacles
-    Vector2 actualVelocity = ApplySmartAvoidance(desiredVelocity, deltaTime);
+    // Simple collision avoidance
+    Vector2 actualVelocity = ApplyCollisionAvoidance(desiredVelocity, deltaTime);
     
     // Try to move
     Vector2 newPosition = position + actualVelocity * deltaTime;
     
-    // Validate position
     if (ValidatePosition(newPosition)) {
         position = newPosition;
+        shouldStepAside = false;
+        collidingWithUnitId = -1;
     } else {
-        // Can't move in desired direction, try alternative movements
-        bool moved = TryAlternativeMovement(actualVelocity, deltaTime);
+        // Blocked - find out why
+        Unit* blockingUnit = FindBlockingUnit(newPosition);
         
-        if (!moved) {
-            // Completely blocked - check if we should wait or repath
-            if (IsTileOccupiedByOtherUnit(targetTile)) {
-                // Next waypoint occupied by another unit
-                Unit* blockingUnit = GetUnitAtTile(targetTile);
-                if (blockingUnit && !blockingUnit->IsMoving()) {
-                    // Blocking unit is stationary, repath immediately
-                    Point2D finalDest = path.back();
-                    Point2D currentGrid = GetGridPosition();
-                    
-                    std::vector<Point2D> newPath = Pathfinding::FindPath(
-                        mapRef, currentGrid, finalDest, 1, id);
-                    
-                    if (!newPath.empty() && newPath != path) {
-                        path = newPath;
-                        currentPathIndex = 0;
-                    } else {
-                        // No alternate route, wait
-                        isWaitingForPath = true;
-                        waitTimer = 0.0f;
-                    }
-                } else {
-                    // Blocking unit is moving, wait briefly
-                    isWaitingForPath = true;
-                    waitTimer = 0.0f;
-                }
-            }
+        if (blockingUnit) {
+            HandleCollision(blockingUnit, deltaTime);
+        } else {
+            // Blocked by static obstacle - try to slide
+            TrySimpleSlide(actualVelocity, deltaTime);
         }
     }
     
-    // Update spatial grid
     if (movementSystem) {
         Vector2 oldPos = position;
         movementSystem->UpdateUnitPosition(this, oldPos, position);
     }
+}
+
+bool Unit::TrySimpleSlide(const Vector2& desiredVelocity, float deltaTime) {
+    Vector2 xOnly(desiredVelocity.x, 0);
+    Vector2 testPos = position + xOnly * deltaTime;
+    if (ValidatePosition(testPos)) {
+        position = testPos;
+        return true;
+    }
+    
+    Vector2 yOnly(0, desiredVelocity.y);
+    testPos = position + yOnly * deltaTime;
+    if (ValidatePosition(testPos)) {
+        position = testPos;
+        return true;
+    }
+    
+    return false;
+}
+
+
+void Unit::HandleCollision(Unit* otherUnit, float deltaTime) {
+    if (!otherUnit) return;
+    
+    // Determine who has priority based on ID (lower ID = higher priority)
+    bool iHavePriority = (id < otherUnit->GetId());
+    
+    if (iHavePriority) {
+        // I have priority - the other unit should step aside
+        // I just wait briefly for them to move
+        collisionWaitTimer += deltaTime;
+        
+        if (collisionWaitTimer > 1.0f) {
+            // Waited too long, try to go around
+            Vector2 toOther = otherUnit->GetPosition() - position;
+            Vector2 perpendicular(-toOther.y, toOther.x);
+            perpendicular = perpendicular.Normalized() * 16.0f;
+            
+            Vector2 sideStep = position + perpendicular * deltaTime;
+            if (ValidatePosition(sideStep)) {
+                position = sideStep;
+            }
+            
+            collisionWaitTimer = 0.0f;
+        }
+    } else {
+        // Other unit has priority - I need to step aside
+        collidingWithUnitId = otherUnit->GetId();
+        shouldStepAside = true;
+        
+        // Calculate perpendicular direction to step aside
+        Vector2 toOther = otherUnit->GetPosition() - position;
+        
+        // Step perpendicular to the line between us
+        Vector2 perpendicular(-toOther.y, toOther.x);
+        
+        // Choose direction based on path
+        if (!path.empty()) {
+            Point2D finalDest = path.back();
+            Vector2 toGoal(finalDest.x * 32.0f + 16.0f - position.x,
+                          finalDest.y * 32.0f + 16.0f - position.y);
+            
+            // Pick the perpendicular direction more aligned with our goal
+            float dot1 = perpendicular.x * toGoal.x + perpendicular.y * toGoal.y;
+            if (dot1 < 0) {
+                perpendicular = Vector2(toOther.y, -toOther.x);
+            }
+        }
+        
+        perpendicular = perpendicular.Normalized() * (speed * 32.0f);
+        Vector2 stepAsidePos = position + perpendicular * deltaTime;
+        
+        if (ValidatePosition(stepAsidePos)) {
+            position = stepAsidePos;
+        } else {
+            // Try opposite direction
+            perpendicular = Vector2(-perpendicular.x, -perpendicular.y);
+            stepAsidePos = position + perpendicular * deltaTime;
+            if (ValidatePosition(stepAsidePos)) {
+                position = stepAsidePos;
+            }
+        }
+        
+        // After stepping aside, check if we're clear
+        float distToOther = position.Distance(otherUnit->GetPosition());
+        if (distToOther > 40.0f) {
+            // Far enough away, resume normal movement
+            shouldStepAside = false;
+            collidingWithUnitId = -1;
+        }
+    }
+}
+
+Unit* Unit::FindBlockingUnit(const Vector2& targetPosition) const {
+    if (!mapRef) return nullptr;
+    
+    std::vector<Entity*> allEntities = mapRef->GetAllEntities();
+    
+    for (Entity* other : allEntities) {
+        if (!other || !other->IsAlive()) continue;
+        if (other->GetId() == id) continue;
+        if (other->GetType() != EntityType::UNIT) continue;
+        
+        float distance = targetPosition.Distance(other->GetPosition());
+        if (distance < 20.0f) {
+            return static_cast<Unit*>(other);
+        }
+    }
+    
+    return nullptr;
+}
+
+bool Unit::IsCollidingWith(Unit* otherUnit) const {
+    if (!otherUnit) return false;
+    return collidingWithUnitId == otherUnit->GetId();
 }
 
 Vector2 Unit::ApplySmartAvoidance(const Vector2& desiredVelocity, float deltaTime) {
@@ -833,12 +893,12 @@ void Unit::Deserialize(SaveSystem* saveSystem) {
 Vector2 Unit::ApplyCollisionAvoidance(const Vector2& desiredVelocity, float deltaTime) {
     if (!mapRef) return desiredVelocity;
     
-    const float avoidanceRadius = 40.0f; // 1.25 tiles
-    const float minSeparation = 18.0f; // Just over half a tile
+    const float avoidanceRadius = 48.0f;
     
     Vector2 avoidanceForce(0, 0);
     int neighborCount = 0;
     
+    Point2D myGrid = GetGridPosition();
     std::vector<Entity*> allEntities = mapRef->GetAllEntities();
     
     for (Entity* other : allEntities) {
@@ -846,21 +906,19 @@ Vector2 Unit::ApplyCollisionAvoidance(const Vector2& desiredVelocity, float delt
         if (other->GetId() == id) continue;
         if (other->GetType() != EntityType::UNIT) continue;
         
+        // Quick grid check
+        Point2D otherGrid = other->GetGridPosition();
+        int gridDist = abs(myGrid.x - otherGrid.x) + abs(myGrid.y - otherGrid.y);
+        if (gridDist > 2) continue;
+        
         float distance = position.Distance(other->GetPosition());
         
         if (distance > 0 && distance < avoidanceRadius) {
             Vector2 diff = position - other->GetPosition();
             Vector2 pushDir = diff.Normalized();
             
-            // Very strong repulsion when too close
-            float strength;
-            if (distance < minSeparation) {
-                // Emergency separation - very strong force
-                strength = 3.0f * (minSeparation - distance) / minSeparation;
-            } else {
-                // Normal avoidance
-                strength = 1.0f - (distance / avoidanceRadius);
-            }
+            // Simple repulsion based on distance
+            float strength = 1.0f - (distance / avoidanceRadius);
             
             avoidanceForce = avoidanceForce + pushDir * strength;
             neighborCount++;
@@ -871,33 +929,17 @@ Vector2 Unit::ApplyCollisionAvoidance(const Vector2& desiredVelocity, float delt
         return desiredVelocity;
     }
     
-    // Normalize avoidance force
     avoidanceForce = avoidanceForce * (1.0f / neighborCount);
+    Vector2 blended = desiredVelocity + avoidanceForce * 40.0f;
     
-    // Strong blending - avoidance takes priority when close
-    const float avoidanceWeight = 1.5f;
-    Vector2 blended = desiredVelocity + avoidanceForce * avoidanceWeight * 32.0f;
-    
-    // Maintain speed but allow slowing down when heavily avoiding
     float desiredSpeed = desiredVelocity.Length();
-    float blendedLength = blended.Length();
-    
-    if (blendedLength > 0.01f) {
-        if (neighborCount > 2) {
-            // Multiple neighbors - allow significant slowdown
-            float minSpeed = desiredSpeed * 0.3f;
-            float targetSpeed = std::max(minSpeed, std::min(desiredSpeed, blendedLength));
-            return blended.Normalized() * targetSpeed;
-        } else {
-            // Few neighbors - maintain most of speed
-            float minSpeed = desiredSpeed * 0.6f;
-            float targetSpeed = std::max(minSpeed, std::min(desiredSpeed, blendedLength));
-            return blended.Normalized() * targetSpeed;
-        }
+    if (blended.Length() > 0.01f) {
+        return blended.Normalized() * desiredSpeed;
     }
     
     return desiredVelocity;
 }
+
 
 bool Unit::ValidatePosition(const Vector2& pos) const {
     Point2D gridPos((int)(pos.x / 32.0f), (int)(pos.y / 32.0f));
@@ -907,8 +949,32 @@ bool Unit::ValidatePosition(const Vector2& pos) const {
     if (!mapRef->IsWalkable(gridPos.x, gridPos.y)) return false;
     if (mapRef->IsTileBlockedByStaticEntity(gridPos.x, gridPos.y, id)) return false;
     
-    // Check edge samples to prevent clipping into barriers
-    const float checkRadius = 3.0f;
+    // Check diagonal corner cutting
+    Point2D currentGrid = GetGridPosition();
+    if (currentGrid != gridPos) {
+        int dx = gridPos.x - currentGrid.x;
+        int dy = gridPos.y - currentGrid.y;
+        
+        if (dx != 0 && dy != 0) {
+            Point2D corner1(currentGrid.x + dx, currentGrid.y);
+            Point2D corner2(currentGrid.x, currentGrid.y + dy);
+            
+            bool corner1Blocked = !mapRef->IsInBounds(corner1.x, corner1.y) ||
+                                !mapRef->IsWalkable(corner1.x, corner1.y) ||
+                                mapRef->IsTileBlockedByStaticEntity(corner1.x, corner1.y, id);
+            
+            bool corner2Blocked = !mapRef->IsInBounds(corner2.x, corner2.y) ||
+                                !mapRef->IsWalkable(corner2.x, corner2.y) ||
+                                mapRef->IsTileBlockedByStaticEntity(corner2.x, corner2.y, id);
+            
+            if (corner1Blocked && corner2Blocked) {
+                return false;
+            }
+        }
+    }
+    
+    // Check edge samples
+    const float checkRadius = 14.0f;
     const int checkPoints = 8;
     
     for (int i = 0; i < checkPoints; i++) {
@@ -923,7 +989,7 @@ bool Unit::ValidatePosition(const Vector2& pos) const {
         if (mapRef->IsTileBlockedByStaticEntity(checkGrid.x, checkGrid.y, id)) return false;
     }
     
-    // KEY FIX: The Overlap Trap Resolution
+    // Unit collision - allow if increasing separation
     std::vector<Entity*> allEntities = mapRef->GetAllEntities();
     for (Entity* other : allEntities) {
         if (!other || !other->IsAlive()) continue;
@@ -933,15 +999,15 @@ bool Unit::ValidatePosition(const Vector2& pos) const {
         float newDist = pos.Distance(other->GetPosition());
         float currentDist = position.Distance(other->GetPosition());
         
-        // Strict minimum distance, BUT allow movement if it INCREASES separation.
-        // This means if they are already stuck/overlapping, they are allowed to walk away!
-        if (newDist < 20.0f && newDist <= currentDist) {
+        // Allow movement if it increases distance OR if we're stepping aside
+        if (newDist < 20.0f && newDist <= currentDist && !shouldStepAside) {
             return false;
         }
     }
     
     return true;
 }
+
 
 Vector2 Unit::TrySlideMovement(const Vector2& desiredVelocity, float deltaTime) {
     // Try X only

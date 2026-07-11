@@ -103,9 +103,14 @@ public:
 
     void SetMovementSystem(class MovementSystem* ms) { movementSystem = ms; }
 
-    bool IsWaitingForPath() const { return isWaitingForPath; }
-    void SetWaitingForPath(bool waiting) { isWaitingForPath = waiting; }
     const std::vector<Point2D>& GetPath() const { return path; }
+
+    void HandleCollision(Unit* otherUnit, float deltaTime);
+    bool IsCollidingWith(Unit* otherUnit) const;
+
+    //bool IsWaitingForPath() const { return isWaitingForPath; }
+    //void SetWaitingForPath(bool waiting) { isWaitingForPath = waiting; }
+    //const std::vector<Point2D>& GetPath() const { return path; }
 
 private:
     // Collision avoidance helpers
@@ -121,12 +126,14 @@ private:
     Unit* GetUnitAtTile(const Point2D& tile) const;
     Vector2 ApplySmartAvoidance(const Vector2& desiredVelocity, float deltaTime);
     bool TryAlternativeMovement(const Vector2& desiredVelocity, float deltaTime);
+    bool TrySimpleSlide(const Vector2& desiredVelocity, float deltaTime);
     
-    float waitTimer = 0.0f;
-    const float MAX_WAIT_TIME = 2.0f; // Wait for other units before repathing
-    bool isWaitingForPath = false;
-    Point2D blockedByUnit; // Which tile has a blocking unit
+    Unit* FindBlockingUnit(const Vector2& targetPosition) const;
     
+    float collisionWaitTimer;
+    int collidingWithUnitId;
+    bool shouldStepAside;
+
 protected:
     UnitType unitType;
     UnitState state;
