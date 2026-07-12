@@ -86,24 +86,19 @@ MoveCommand::MoveCommand(const Point2D& dest)
 void MoveCommand::Execute(Unit* unit, Map* map) {
     if (!unit || !map) return;
     
-    Point2D start = unit->GetGridPosition();
-    // Pass unit ID so pathfinding avoids other units (but not this one)
-    std::vector<Point2D> path = Pathfinding::FindPath(map, start, destination, 1, unit->GetId());
+    // Convert grid destination to world position
+    Vector2 destPos(destination.x * 32.0f + 16.0f, destination.y * 32.0f + 16.0f);
     
-    if (!path.empty()) {
-        unit->SetPath(path);
-    }
+    // Use NavMesh pathfinding
+    unit->MoveToPosition(destPos);
 }
 
 bool MoveCommand::IsComplete(Unit* unit) const {
-    return !unit->IsMoving() || unit->GetGridPosition() == destination;
+    return unit->GetNavPath().IsComplete() || !unit->IsMoving();
 }
 
 void MoveCommand::Update(Unit* unit, float deltaTime, Map* map) {
-    // Movement is handled by unit itself
-    if (IsComplete(unit)) {
-        // Command complete
-    }
+    // Movement is handled by unit's UpdateMovement
 }
 
 // AttackCommand implementation

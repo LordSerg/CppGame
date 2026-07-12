@@ -6,6 +6,8 @@
 #include "FogOfWar.h"
 #include "../Entities/Entity.h"
 #include "../Entities/Obstacle.h"
+#include "../Navigation/NavMesh.h"
+#include "../Navigation/SteeringSystem.h"
 #include <vector>
 #include <memory>
 
@@ -42,6 +44,7 @@ public:
     std::vector<Entity*> GetEntitiesInRect(const Rect& rect);
     std::vector<Entity*> GetEntitiesAt(int x, int y);
     std::vector<Entity*> GetAllEntities();
+    std::vector<Unit*> GetAllUnits();
     std::vector<std::shared_ptr<Entity>> GetAllEntitiesShared();
     Entity* GetEntityById(int id);
     void RemoveDeadEntities();
@@ -74,6 +77,10 @@ public:
     // Get all occupied tiles for a player for collision avoidance
     std::vector<Point2D> GetOccupiedTiles(int ownerId) const;
     
+    //NavMesh
+    NavMesh* GetNavMesh() { return navMesh.get(); }
+    SteeringSystem* GetSteeringSystem() { return steeringSystem.get(); }
+
     // Serialization
     void Serialize(class SaveSystem* saveSystem);
     void Deserialize(class SaveSystem* saveSystem);
@@ -99,6 +106,9 @@ private:
     
     void GenerateTerrain();
     void PlaceStartingResources();
+
+    std::unique_ptr<NavMesh> navMesh;
+    std::unique_ptr<SteeringSystem> steeringSystem;
 };
 
 #endif // MAP_H

@@ -49,6 +49,13 @@ void Map::Initialize() {
     
     GenerateTerrain();
     PlaceStartingResources();
+
+    // Build NavMesh
+    navMesh = std::make_unique<NavMesh>(this);
+    navMesh->Build();
+    
+    // Create steering system
+    steeringSystem = std::make_unique<SteeringSystem>(navMesh.get());
 }
 
 void Map::Update(float deltaTime) {
@@ -238,6 +245,18 @@ std::vector<Entity*> Map::GetAllEntities() {
 
 std::vector<std::shared_ptr<Entity>> Map::GetAllEntitiesShared() {
     return entities;
+}
+
+std::vector<Unit*> Map::GetAllUnits() {
+    std::vector<Unit*> units;
+    
+    for (auto& entity : entities) {
+        if (entity->GetType() == EntityType::UNIT && entity->IsAlive()) {
+            units.push_back(static_cast<Unit*>(entity.get()));
+        }
+    }
+    
+    return units;
 }
 
 void Map::RemoveDeadEntities() {
@@ -531,11 +550,11 @@ void Map::GenerateTerrain() {
         for (int x = 0; x < width; x++) {
             int roll = dis(gen);
             
-            if (roll < 5) {
+            if (roll < 2) {
                 tiles[y][x] = Tile(x, y, TileType::WATER);
-            } else if (roll < 15) {
+            } else if (roll < 5) {
                 tiles[y][x] = Tile(x, y, TileType::STONE);
-            } else if (roll < 30) {
+            } else if (roll < 10) {
                 tiles[y][x] = Tile(x, y, TileType::DIRT);
             } else {
                 tiles[y][x] = Tile(x, y, TileType::GRASS);

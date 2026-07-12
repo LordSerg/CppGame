@@ -3,6 +3,8 @@
 
 #include "Entity.h"
 #include "../Map/Pathfinding.h"
+#include "../Navigation/NavMesh.h"
+#include "../Navigation/SteeringSystem.h"
 #include <queue>
 #include <memory>
 
@@ -47,10 +49,22 @@ public:
     void ClearCommands();
     void StopCurrentAction();
     
-    // Movement
+    
+    // NavMesh-based movement
+    void MoveToPosition(const Vector2& worldPosition);
+    void MoveToTile(const Point2D& tile);
+    
+    // Update these
+    const NavPath& GetNavPath() const { return navPath; }
+    void SetNavPath(const NavPath& path);
+    Vector2 GetVelocity() const { return velocity; }
+    void SetSteeringSystem(SteeringSystem* ss) { steeringSystem = ss; }
+
     void MoveTo(const Point2D& destination);
     void SetPath(const std::vector<Point2D>& newPath);
     bool IsMoving() const { return state == UnitState::MOVING; }
+    void CalculatePathTo(const Vector2& destination);
+    void UpdateNearbyUnits(const std::vector<Unit*>& allUnits);
     
     // Combat
     void Attack(Entity* target);
@@ -111,6 +125,11 @@ public:
     //bool IsWaitingForPath() const { return isWaitingForPath; }
     //void SetWaitingForPath(bool waiting) { isWaitingForPath = waiting; }
     //const std::vector<Point2D>& GetPath() const { return path; }
+    
+    std::vector<Unit*> GetAllUnits(); // Helper to get all units from map
+    
+    // Velocity smoothing
+    void UpdateVelocity(float deltaTime, const Vector2& targetVelocity);
 
 private:
     // Collision avoidance helpers
@@ -134,6 +153,17 @@ private:
     int collidingWithUnitId;
     bool shouldStepAside;
 
+    NavPath navPath;
+    SteeringSystem* steeringSystem;
+    Vector2 velocity;
+    Vector2 smoothedVelocity;
+    
+    //static const float NEARBY_UPDATE_INTERVAL = 0.5f;
+    static const float NEARBY_UPDATE_INTERVAL;
+    
+    // Nearby unit cache
+    std::vector<Unit*> nearbyUnits;
+    float nearbyUpdateTimer = 0.0f;
 protected:
     UnitType unitType;
     UnitState state;

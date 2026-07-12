@@ -227,6 +227,8 @@ void Game::PlaceStartingUnits() {
     // Player starting position
     Point2D playerStart(50, 50);
     Point2D aiStart(450, 450);
+
+    SteeringSystem* steeringSys = map->GetSteeringSystem();
     
     // Player starting units
     for (int i = 0; i < 9; i++) {
@@ -234,11 +236,11 @@ void Game::PlaceStartingUnits() {
             map->GetNextEntityId(), 
             humanPlayerId
         );
-        // Set position to TILE CENTER (tile * 32 + 16)
         peasant->SetPosition(
             (playerStart.x + i * 2) * 32.0f + 16.0f, 
             playerStart.y * 32.0f + 16.0f
         );
+        peasant->SetSteeringSystem(steeringSys);
         map->AddEntity(peasant);
         populationSystem->OnUnitCreated(humanPlayerId);
     }
@@ -267,6 +269,7 @@ void Game::PlaceStartingUnits() {
             (aiStart.x + i * 2) * 32.0f + 16.0f, 
             aiStart.y * 32.0f + 16.0f
         );
+        peasant->SetSteeringSystem(steeringSys);
         map->AddEntity(peasant);
         populationSystem->OnUnitCreated(1);
     }
