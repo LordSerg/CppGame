@@ -198,20 +198,54 @@ void Unit::StopCurrentAction() {
 
 void Unit::MoveToPosition(const Vector2& worldPosition) {
     if (!mapRef || !mapRef->GetNavMesh()) {
+        std::cerr << "Unit::MoveToPosition - No map or navmesh!" << std::endl;
         state = UnitState::IDLE;
         return;
     }
     
     NavMesh* navMesh = mapRef->GetNavMesh();
+
+    // Check if start and end are on walkable polygons
+    int startPoly = navMesh->GetPolygonAt(position);
+    int endPoly = navMesh->GetPolygonAt(worldPosition);
+    
+    std::cout << "Unit " << id << " pathfinding from poly " << startPoly 
+              << " to poly " << endPoly << std::endl;
+    
+    if (startPoly < 0) {
+        std::cerr << "Unit " << id << " is not on walkable navmesh at (" 
+                  << position.x << ", " << position.y << ")" << std::endl;
+        state = UnitState::IDLE;
+        return;
+    }
+    
+    if (endPoly < 0) {
+        std::cerr << "Destination (" << worldPosition.x << ", " << worldPosition.y 
+                  << ") is not on walkable navmesh!" << std::endl;
+        state = UnitState::IDLE;
+        return;
+    }
+
     navPath = navMesh->FindPath(position, worldPosition);
     
-    if (!navPath.IsComplete()) {
-        state = UnitState::MOVING;
-        velocity = Vector2(0, 0);
-        smoothedVelocity = Vector2(0, 0);
-    } else {
+    std::cout << "Path found with " << navPath.waypoints.size() << " waypoints" << std::endl;
+
+    if (navPath.waypoints.empty()) {
+        std::cerr << "Path is empty!" << std::endl;
         state = UnitState::IDLE;
+        return;
     }
+    
+    // Print waypoints for debugging
+    for (size_t i = 0; i < navPath.waypoints.size(); i++) {
+        std::cout << "  Waypoint " << i << ": (" 
+                  << navPath.waypoints[i].x << ", " << navPath.waypoints[i].y << ")" << std::endl;
+    }
+
+    state = UnitState::MOVING;
+    velocity = Vector2(0, 0);
+    smoothedVelocity = Vector2(0, 0);
+    navPath.currentWaypointIndex = 0;
 }
 
 void Unit::MoveToTile(const Point2D& tile) {
@@ -318,7 +352,7 @@ void Unit::ApplySwordsUpgrade(int level) {
 }
 
 void Unit::UpdateMovement(float deltaTime) {
-    if (navPath.IsComplete()) {
+    if (navPath.IsComplete() || navPath.waypoints.empty()) {
         state = UnitState::IDLE;
         velocity = Vector2(0, 0);
         smoothedVelocity = Vector2(0, 0);
@@ -326,13 +360,23 @@ void Unit::UpdateMovement(float deltaTime) {
     }
     
     if (!mapRef) return;
+
+    // DEBUG: Print once per second
+    //static float debugTimer = 0;
+    //debugTimer += deltaTime;
+    //if (debugTimer > 1.0f) {
+    //    debugTimer = 0;
+    //    std::cout << "Unit " << id << " - State: " << (state == UnitState::MOVING ? "MOVING" : "IDLE")
+    //              << ", Pos: (" << position.x << ", " << position.y << ")"
+    //              << ", Waypoint: " << navPath.currentWaypointIndex << "/" << navPath.waypoints.size()
+    //              << ", Target: (" << navPath.GetCurrentWaypoint().x << ", " << navPath.GetCurrentWaypoint().y << ")"
+    //              << std::endl;
+    //}
     
-    // Update nearby units cache periodically
+    // Update nearby units cache
     nearbyUpdateTimer += deltaTime;
     if (nearbyUpdateTimer >= NEARBY_UPDATE_INTERVAL) {
         nearbyUpdateTimer = 0.0f;
-        
-        // Get all units from map
         std::vector<Entity*> allEntities = mapRef->GetAllEntities();
         std::vector<Unit*> allUnits;
         for (Entity* e : allEntities) {
@@ -344,65 +388,125 @@ void Unit::UpdateMovement(float deltaTime) {
         UpdateNearbyUnits(allUnits);
     }
     
-    // Calculate steering forces
-    SteeringSystem* steering = mapRef->GetSteeringSystem();
-    if (steering) {
-        SteeringForces forces = steering->CalculateSteering(this, nearbyUnits, deltaTime);
-        
-        // Apply forces to velocity
-        Vector2 totalForce = forces.GetTotal();
-        Vector2 acceleration = totalForce * deltaTime;
-        velocity = velocity + acceleration;
-        
-        // Limit speed
-        float maxSpeed = speed * 32.0f;
-        if (velocity.Length() > maxSpeed) {
-            velocity = velocity.Normalized() * maxSpeed;
-        }
-        
-        // Smooth velocity for natural movement
-        smoothedVelocity.x = Math::Lerp(smoothedVelocity.x, velocity.x, deltaTime * 5.0f);
-        smoothedVelocity.y = Math::Lerp(smoothedVelocity.y, velocity.y, deltaTime * 5.0f);
-        
-        // Update position
-        Vector2 newPosition = position + smoothedVelocity * deltaTime;
-        
-        // Basic validation: make sure we're still on walkable navmesh
-        NavMesh* navMesh = mapRef->GetNavMesh();
-        if (navMesh && navMesh->GetNodeAt(newPosition) >= 0) {
-            position = newPosition;
-        } else {
-            // Hit non-walkable area, slow down
-            velocity = velocity * 0.5f;
-        }
-    } else {
-        // Fallback: simple movement without steering
-        Vector2 currentWaypoint = navPath.GetCurrentWaypoint();
-        Vector2 toWaypoint = currentWaypoint - position;
-        float distance = toWaypoint.Length();
-        
-        if (distance > 0.1f) {
-            Vector2 direction = toWaypoint.Normalized();
-            velocity = direction * (speed * 32.0f);
-            position = position + velocity * deltaTime;
-        }
+    // Get current waypoint
+    if (navPath.currentWaypointIndex >= navPath.waypoints.size()) {
+        // Reached end of path
+        state = UnitState::IDLE;
+        velocity = Vector2(0, 0);
+        smoothedVelocity = Vector2(0, 0);
+        navPath.waypoints.clear();
+        navPath.currentWaypointIndex = 0;
+        return;
     }
+
+    Vector2 currentWaypoint = navPath.waypoints[navPath.currentWaypointIndex];
+    Vector2 toWaypoint = currentWaypoint - position;
+    float distanceToWaypoint = toWaypoint.Length();
     
     // Check if we reached current waypoint
-    Vector2 currentWaypoint = navPath.GetCurrentWaypoint();
-    float distanceToWaypoint = position.Distance(currentWaypoint);
+    const float waypointReachedThreshold = 12.0f; // Larger threshold for reliability
     
-    if (distanceToWaypoint < 8.0f) {
-        navPath.AdvanceWaypoint();
+    if (distanceToWaypoint < waypointReachedThreshold) {
+        // Reached this waypoint, move to next
+        navPath.currentWaypointIndex++;
         
-        if (navPath.IsComplete()) {
+        if (navPath.currentWaypointIndex >= navPath.waypoints.size()) {
+            // Reached final destination
             state = UnitState::IDLE;
             velocity = Vector2(0, 0);
             smoothedVelocity = Vector2(0, 0);
+            return;
+        }
+        
+        // Get next waypoint
+        currentWaypoint = navPath.waypoints[navPath.currentWaypointIndex];
+        toWaypoint = currentWaypoint - position;
+        distanceToWaypoint = toWaypoint.Length();
+    }
+    
+    // Calculate desired velocity toward current waypoint
+    Vector2 desiredVelocity(0, 0);
+    
+    if (distanceToWaypoint > 0.1f) {
+        Vector2 direction = toWaypoint.Normalized();
+        float maxSpeed = speed * 32.0f;
+        
+        // Slow down when very close to waypoint
+        if (distanceToWaypoint < 30.0f) {
+            float speedRatio = distanceToWaypoint / 30.0f;
+            desiredVelocity = direction * (maxSpeed * speedRatio);
+        } else {
+            desiredVelocity = direction * maxSpeed;
         }
     }
     
-    // Update spatial grid if available
+    // Apply separation from nearby units
+    Vector2 separationForce(0, 0);
+    const float separationRadius = 40.0f;
+    const float minSeparation = 24.0f;
+    
+    for (Unit* other : nearbyUnits) {
+        Vector2 diff = position - other->GetPosition();
+        float distance = diff.Length();
+        
+        if (distance < separationRadius && distance > 0.1f) {
+            float strength;
+            if (distance < minSeparation) {
+                // Very strong repulsion when too close
+                strength = 3.0f * (minSeparation - distance) / minSeparation;
+            } else {
+                // Normal repulsion
+                strength = 1.5f * (1.0f - distance / separationRadius);
+            }
+            
+            separationForce = separationForce + diff.Normalized() * strength;
+        }
+    }
+    
+    // Combine desired movement with separation
+    Vector2 totalForce = desiredVelocity + separationForce * 50.0f;
+    
+    // Update velocity with smoothing
+    const float accelerationRate = 10.0f;
+    velocity.x = Math::Lerp(velocity.x, totalForce.x, deltaTime * accelerationRate);
+    velocity.y = Math::Lerp(velocity.y, totalForce.y, deltaTime * accelerationRate);
+    
+    // Limit speed
+    float maxSpeed = speed * 32.0f * 1.2f; // Allow slight overspeed
+    if (velocity.Length() > maxSpeed) {
+        velocity = velocity.Normalized() * maxSpeed;
+    }
+    
+    // Apply velocity to position - THIS IS CRITICAL!
+    Vector2 movement = velocity * deltaTime;
+    Vector2 newPosition = position + movement;
+    
+    // Validate new position is on navmesh
+    NavMesh* navMesh = mapRef->GetNavMesh();
+    if (navMesh) {
+        if (navMesh->IsPointWalkable(newPosition)) {
+            position = newPosition;
+        } else {
+            // Hit obstacle - try to slide along it
+            Vector2 xOnly(movement.x, 0);
+            if (navMesh->IsPointWalkable(position + xOnly)) {
+                position = position + xOnly;
+            } else {
+                Vector2 yOnly(0, movement.y);
+                if (navMesh->IsPointWalkable(position + yOnly)) {
+                    position = position + yOnly;
+                } else {
+                    // Completely blocked - slow down
+                    velocity = velocity * 0.3f;
+                }
+            }
+        }
+    } else {
+        // No navmesh validation - just move
+        position = newPosition;
+    }
+    
+    // Update spatial grid
     if (movementSystem) {
         Vector2 oldPos = position;
         movementSystem->UpdateUnitPosition(this, oldPos, position);

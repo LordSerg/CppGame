@@ -263,26 +263,35 @@ void CommandSystem::IssueMove(const std::vector<Unit*>& units,
                              const Point2D& destination, bool queue) {
     if (units.empty()) return;
     
-    // If more than 1 unit, use formation spreading
-    if (units.size() > 1) {
-        std::vector<Point2D> formationPositions = GenerateFormationPositions(destination, units.size(), map);
-        
-        for (size_t i = 0; i < units.size(); i++) {
-            Point2D targetPos;
-            if (i < formationPositions.size()) {
-                targetPos = formationPositions[i];
-            } else {
-                // Fallback: all remaining units go to the center
-                targetPos = destination;
-            }
-            
-            auto command = std::make_shared<MoveCommand>(targetPos);
-            GiveCommandToUnit(units[i], command, queue);
-        }
+    // Convert to world position
+    Vector2 centerPos(destination.x * 32.0f + 16.0f, 
+                     destination.y * 32.0f + 16.0f);
+    
+    if (units.size() == 1) {
+        // Single unit - go directly
+        units[0]->MoveToPosition(centerPos);
     } else {
-        // Single unit - go directly to destination
-        auto command = std::make_shared<MoveCommand>(destination);
-        GiveCommandToUnit(units[0], command, queue);
+        // Multiple units - form a spread formation
+        int cols = (int)std::ceil(std::sqrt((float)units.size()));
+        int rows = (units.size() + cols - 1) / cols;
+        
+        float spacing = 48.0f; // NOT grid-aligned!
+        
+        float offsetX = -(cols - 1) * spacing * 0.5f;
+        float offsetY = -(rows - 1) * spacing * 0.5f;
+        
+        int idx = 0;
+        for (int r = 0; r < rows && idx < units.size(); r++) {
+            for (int c = 0; c < cols && idx < units.size(); c++) {
+                Vector2 formationPos(
+                    centerPos.x + offsetX + c * spacing,
+                    centerPos.y + offsetY + r * spacing
+                );
+                
+                units[idx]->MoveToPosition(formationPos);
+                idx++;
+            }
+        }
     }
 }
 

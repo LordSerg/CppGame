@@ -28,14 +28,14 @@ SteeringForces SteeringSystem::CalculateSteering(
     // Separation (don't crowd neighbors)
     forces.separation = Separate(position, nearbyUnits, 48.0f);
     
-    // Cohesion (stay with group)
+    // Cohesion (stay with group) - but weaker
     forces.cohesion = Cohere(position, nearbyUnits, 96.0f);
     
-    // Alignment (match group velocity)
+    // Alignment (match group velocity) - but weaker
     forces.alignment = Align(velocity, nearbyUnits, 64.0f);
     
     // Obstacle avoidance
-    forces.avoidance = AvoidObstacles(position, velocity, 80.0f);
+    forces.avoidance = AvoidObstacles(position, velocity, 60.0f);
     
     return forces;
 }
@@ -49,13 +49,15 @@ Vector2 SteeringSystem::Seek(const Vector2& position, const Vector2& target,
         return Vector2(0, 0); // Close enough
     }
     
-    desired = desired.Normalized() * maxSpeed;
+    // Slow down when approaching target
+    if (distance < 50.0f) {
+        float ratio = distance / 50.0f;
+        desired = desired.Normalized() * (maxSpeed * ratio);
+    } else {
+        desired = desired.Normalized() * maxSpeed;
+    }
+    
     return desired;
-}
-
-Vector2 SteeringSystem::Flee(const Vector2& position, const Vector2& threat) {
-    Vector2 desired = position - threat;
-    return desired.Normalized();
 }
 
 Vector2 SteeringSystem::Separate(const Vector2& position,
@@ -69,7 +71,10 @@ Vector2 SteeringSystem::Separate(const Vector2& position,
         float distance = diff.Length();
         
         if (distance > 0 && distance < separationRadius) {
+            // Stronger repulsion when closer
             float strength = 1.0f - (distance / separationRadius);
+            strength = strength * strength; // Square for stronger effect when close
+            
             force = force + diff.Normalized() * strength;
             count++;
         }
@@ -85,6 +90,8 @@ Vector2 SteeringSystem::Separate(const Vector2& position,
 Vector2 SteeringSystem::Cohere(const Vector2& position,
                                const std::vector<Unit*>& nearbyUnits,
                                float cohesionRadius) {
+    if (nearbyUnits.empty()) return Vector2(0, 0);
+    
     Vector2 center(0, 0);
     int count = 0;
     
@@ -98,7 +105,10 @@ Vector2 SteeringSystem::Cohere(const Vector2& position,
     
     if (count > 0) {
         center = center * (1.0f / count);
-        return (center - position).Normalized();
+        Vector2 desired = center - position;
+        if (desired.Length() > 0.1f) {
+            return desired.Normalized() * 0.5f; // Weak cohesion
+        }
     }
     
     return Vector2(0, 0);
@@ -107,6 +117,8 @@ Vector2 SteeringSystem::Cohere(const Vector2& position,
 Vector2 SteeringSystem::Align(const Vector2& velocity,
                               const std::vector<Unit*>& nearbyUnits,
                               float alignmentRadius) {
+    if (nearbyUnits.empty()) return Vector2(0, 0);
+    
     Vector2 avgVelocity(0, 0);
     int count = 0;
     
@@ -117,7 +129,10 @@ Vector2 SteeringSystem::Align(const Vector2& velocity,
     
     if (count > 0) {
         avgVelocity = avgVelocity * (1.0f / count);
-        return (avgVelocity - velocity).Normalized();
+        Vector2 desired = avgVelocity - velocity;
+        if (desired.Length() > 0.1f) {
+            return desired.Normalized() * 0.3f; // Weak alignment
+        }
     }
     
     return Vector2(0, 0);
@@ -126,48 +141,50 @@ Vector2 SteeringSystem::Align(const Vector2& velocity,
 Vector2 SteeringSystem::AvoidObstacles(const Vector2& position,
                                        const Vector2& velocity,
                                        float lookAheadDistance) {
+    if (!navMesh) return Vector2(0, 0);
     if (velocity.Length() < 0.01f) return Vector2(0, 0);
     
     Vector2 forward = velocity.Normalized();
     Vector2 lookAhead = position + forward * lookAheadDistance;
     
-    // Check if lookahead point is on walkable navmesh
-    int nodeId = navMesh->GetNodeAt(lookAhead);
+    // Check if lookahead point is on walkable polygon
+    int currentPoly = navMesh->GetPolygonAt(position);
+    int aheadPoly = navMesh->GetPolygonAt(lookAhead);
     
-    if (nodeId < 0) {
-        // Obstacle ahead - steer away
-        // Find nearest valid point
-        const NavNode* nearestNode = nullptr;
-        float minDist = 999999.0f;
+    if (currentPoly >= 0 && aheadPoly < 0) {
+        // We're heading toward non-walkable area - steer away
         
-        // Search nearby nodes
-        auto nearbyNodes = navMesh->GetNodesInRadius(position, lookAheadDistance * 1.5f);
+        // Sample points around the forward direction to find a clear path
+        const int samples = 5;
+        Vector2 bestDirection = forward;
+        float bestScore = -1.0f;
         
-        for (int id : nearbyNodes) {
-            const NavNode* node = navMesh->GetNode(id);
-            if (!node) continue;
+        for (int i = 0; i < samples; i++) {
+            float angleOffset = (i - samples / 2) * 0.3f; // ±45 degrees
+            float angle = atan2(forward.y, forward.x) + angleOffset;
             
-            Vector2 nodeCenter(node->center.x, node->center.y);
-            float dist = lookAhead.Distance(nodeCenter);
-            if (dist < minDist) {
-                minDist = dist;
-                nearestNode = node;
+            Vector2 testDirection(cos(angle), sin(angle));
+            Vector2 testPoint = position + testDirection * lookAheadDistance;
+            
+            int testPoly = navMesh->GetPolygonAt(testPoint);
+            
+            if (testPoly >= 0) {
+                // This direction is clear
+                float score = 1.0f - std::abs(angleOffset);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestDirection = testDirection;
+                }
             }
         }
         
-        if (nearestNode) {
-            Vector2 steerTarget(nearestNode->center.x, nearestNode->center.y);
-            Vector2 avoidance = (steerTarget - position).Normalized();
-            
-            // Add perpendicular component
+        if (bestScore > 0) {
+            // Found a clear direction
+            return (bestDirection - forward) * 2.0f;
+        } else {
+            // No clear direction found - turn perpendicular
             Vector2 perpendicular(-forward.y, forward.x);
-            float dot = avoidance.x * perpendicular.x + avoidance.y * perpendicular.y;
-            
-            if (std::abs(dot) < 0.3f) {
-                avoidance = avoidance + perpendicular * (dot > 0 ? 0.5f : -0.5f);
-            }
-            
-            return avoidance;
+            return perpendicular * 2.0f;
         }
     }
     
@@ -184,7 +201,7 @@ std::vector<Vector2> SteeringSystem::CalculateFormationPositions(
         return positions;
     }
     
-    // Square formation
+    // Square formation with non-grid-aligned spacing
     int cols = (int)std::ceil(std::sqrt((float)count));
     int rows = (count + cols - 1) / cols;
     
@@ -194,27 +211,17 @@ std::vector<Vector2> SteeringSystem::CalculateFormationPositions(
     int idx = 0;
     for (int r = 0; r < rows && idx < count; r++) {
         for (int c = 0; c < cols && idx < count; c++) {
+            // Add small random offset to break perfect grid
+            float jitterX = (rand() % 10 - 5) * 0.5f;
+            float jitterY = (rand() % 10 - 5) * 0.5f;
+            
             positions.push_back(Vector2(
-                center.x + offsetX + c * spacing,
-                center.y + offsetY + r * spacing
+                center.x + offsetX + c * spacing + jitterX,
+                center.y + offsetY + r * spacing + jitterY
             ));
             idx++;
         }
     }
     
     return positions;
-}
-
-std::vector<Vector2> SteeringSystem::CalculateFlowField(
-    const Vector2& destination,
-    const std::vector<Unit*>& units) {
-    
-    std::vector<Vector2> flowDirections;
-    
-    for (Unit* unit : units) {
-        Vector2 toDest = destination - unit->GetPosition();
-        flowDirections.push_back(toDest.Normalized());
-    }
-    
-    return flowDirections;
 }

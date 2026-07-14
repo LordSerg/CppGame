@@ -5,27 +5,22 @@
 #include <algorithm>
 #include <queue>
 #include <set>
+#include <limits>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-//NavNode::NavNode() : id(-1) {}
-
-// NavNode methods
-bool NavNode::Contains(const Vector2& point) const {
-    if (vertices.empty()) return false;
+// NavPolygon implementation
+bool NavPolygon::Contains(const Vector2& point) const {
+    if (vertices.size() < 3) return false;
     
-    // Ray casting algorithm for point-in-polygon
-    int n = vertices.size();
+    // Point-in-polygon test (ray casting)
     bool inside = false;
+    int n = vertices.size();
     
     for (int i = 0, j = n - 1; i < n; j = i++) {
-        float xi = vertices[i].x;
-        float yi = vertices[i].y;
-        float xj = vertices[j].x;
-        float yj = vertices[j].y;
-        
-        if (((yi > point.y) != (yj > point.y)) &&
-            (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi)) {
+        if (((vertices[i].y > point.y) != (vertices[j].y > point.y)) &&
+            (point.x < (vertices[j].x - vertices[i].x) * (point.y - vertices[i].y) / 
+                      (vertices[j].y - vertices[i].y) + vertices[i].x)) {
             inside = !inside;
         }
     }
@@ -33,45 +28,45 @@ bool NavNode::Contains(const Vector2& point) const {
     return inside;
 }
 
-Point2D NavNode::GetClosestPointOnEdge(const Vector2& point) const {
-    if (vertices.empty()) return center;
-    
-    Point2D closest = center;
-    float minDist = 999999.0f;
-    
-    int n = vertices.size();
-    for (int i = 0; i < n; i++) {
-        int j = (i + 1) % n;
-        
-        Vector2 a(vertices[i].x, vertices[i].y);
-        Vector2 b(vertices[j].x, vertices[j].y);
-        
-        Vector2 ab = b - a;
-        Vector2 ap = point - a;
-        
-        float abLengthSq = ab.x * ab.x + ab.y * ab.y;
-        if (abLengthSq < 0.001f) continue;
-        
-        float t = (ap.x * ab.x + ap.y * ab.y) / abLengthSq;
-        t = std::max(0.0f, std::min(1.0f, t));
-        
-        Vector2 closestOnEdge = a + ab * t;
-        float dist = point.Distance(closestOnEdge);
-        
-        if (dist < minDist) {
-            minDist = dist;
-            closest = Point2D((int)closestOnEdge.x, (int)closestOnEdge.y);
-        }
+void NavPolygon::CalculateCenter() {
+    if (vertices.empty()) {
+        center = Vector2(0, 0);
+        return;
     }
     
-    return closest;
+    float totalX = 0, totalY = 0;
+    for (const Vector2& v : vertices) {
+        totalX += v.x;
+        totalY += v.y;
+    }
+    
+    center = Vector2(totalX / vertices.size(), totalY / vertices.size());
 }
 
-// NavPath methods
+float NavPolygon::GetArea() const {
+    if (vertices.size() < 3) return 0.0f;
+    
+    float area = 0.0f;
+    int n = vertices.size();
+    
+    for (int i = 0; i < n; i++) {
+        int j = (i + 1) % n;
+        area += vertices[i].x * vertices[j].y;
+        area -= vertices[j].x * vertices[i].y;
+    }
+    
+    return std::abs(area) * 0.5f;
+}
+
+// NavPath implementation
 Vector2 NavPath::GetCurrentWaypoint() const {
     if (waypoints.empty()) return Vector2(0, 0);
     if (currentWaypointIndex >= waypoints.size()) return waypoints.back();
     return waypoints[currentWaypointIndex];
+}
+
+bool NavPath::HasNextWaypoint() const {
+    return currentWaypointIndex < waypoints.size();
 }
 
 void NavPath::AdvanceWaypoint() {
@@ -84,124 +79,439 @@ bool NavPath::IsComplete() const {
     return currentWaypointIndex >= waypoints.size();
 }
 
-// NavMesh methods
-NavMesh::NavMesh(Map* map) : map(map) {
-}
+// NavMesh implementation
+NavMesh::NavMesh(Map* map) : map(map), gridWidth(0), gridHeight(0) {}
 
 void NavMesh::Build() {
     if (!map) return;
     
-    nodes.clear();
+    polygons.clear();
     
-    int gridWidth = map->GetWidth() * GRID_RESOLUTION;
-    int gridHeight = map->GetHeight() * GRID_RESOLUTION;
+    gridWidth = map->GetWidth();
+    gridHeight = map->GetHeight();
     
-    nodeGrid.clear();
-    nodeGrid.resize(gridWidth);
+    spatialGrid.resize(gridWidth);
     for (int i = 0; i < gridWidth; i++) {
-        nodeGrid[i].resize(gridHeight, -1);
+        spatialGrid[i].resize(gridHeight, -1);
     }
     
-    GenerateNodes();
+    BuildPolygons();
+    MergeAdjacentRectangles();
     ConnectNeighbors();
 }
 
-int NavMesh::GetNodeAt(const Vector2& position) const {
-    if (!map) return -1;
+void NavMesh::BuildPolygons() {
+    // Start with individual walkable tiles as 1x1 rectangles
+    std::vector<std::vector<bool>> used(gridHeight, std::vector<bool>(gridWidth, false));
     
-    int gx = (int)(position.x / 32.0f * GRID_RESOLUTION);
-    int gy = (int)(position.y / 32.0f * GRID_RESOLUTION);
+    int polyId = 0;
     
-    int gridWidth = map->GetWidth() * GRID_RESOLUTION;
-    int gridHeight = map->GetHeight() * GRID_RESOLUTION;
+    for (int y = 0; y < gridHeight; y++) {
+        for (int x = 0; x < gridWidth; x++) {
+            if (used[y][x]) continue;
+            if (!map->IsWalkable(x, y)) continue;
+            if (map->IsTileBlockedByStaticEntity(x, y, -1)) continue;
+            
+            // Find maximal rectangle starting from (x, y)
+            int maxWidth = 1;
+            int maxHeight = 1;
+            
+            // Expand width
+            while (x + maxWidth < gridWidth && 
+                   !used[y][x + maxWidth] &&
+                   map->IsWalkable(x + maxWidth, y) &&
+                   !map->IsTileBlockedByStaticEntity(x + maxWidth, y, -1)) {
+                maxWidth++;
+            }
+            
+            // Expand height (while maintaining width)
+            bool canExpand = true;
+            while (y + maxHeight < gridHeight && canExpand) {
+                for (int dx = 0; dx < maxWidth; dx++) {
+                    if (used[y + maxHeight][x + dx] ||
+                        !map->IsWalkable(x + dx, y + maxHeight) ||
+                        map->IsTileBlockedByStaticEntity(x + dx, y + maxHeight, -1)) {
+                        canExpand = false;
+                        break;
+                    }
+                }
+                if (canExpand) maxHeight++;
+            }
+            
+            // Create polygon for this rectangle
+            NavPolygon poly(polyId);
+            
+            float worldX = x * GRID_CELL_SIZE;
+            float worldY = y * GRID_CELL_SIZE;
+            float worldW = maxWidth * GRID_CELL_SIZE;
+            float worldH = maxHeight * GRID_CELL_SIZE;
+            
+            poly.vertices = {
+                Vector2(worldX, worldY),
+                Vector2(worldX + worldW, worldY),
+                Vector2(worldX + worldW, worldY + worldH),
+                Vector2(worldX, worldY + worldH)
+            };
+            
+            poly.CalculateCenter();
+            polygons.push_back(poly);
+            
+            // Mark tiles as used and update spatial grid
+            for (int dy = 0; dy < maxHeight; dy++) {
+                for (int dx = 0; dx < maxWidth; dx++) {
+                    used[y + dy][x + dx] = true;
+                    spatialGrid[x + dx][y + dy] = polyId;
+                }
+            }
+            
+            polyId++;
+        }
+    }
+}
+
+void NavMesh::MergeAdjacentRectangles() {
+    bool merged = true;
+    int iterations = 0;
+    const int MAX_ITERATIONS = 10; // Prevent infinite loops
     
-    // 1. Fast direct lookup
-    if (gx >= 0 && gx < gridWidth && gy >= 0 && gy < gridHeight) {
-        int nodeId = nodeGrid[gx][gy];
-        if (nodeId >= 0 && nodeId < (int)nodes.size()) {
-            return nodeId;
+    while (merged && iterations < MAX_ITERATIONS) {
+        merged = false;
+        iterations++;
+        
+        for (size_t i = 0; i < polygons.size(); i++) {
+            if (polygons[i].id == -1) continue; // Already merged
+            
+            for (size_t j = i + 1; j < polygons.size(); j++) {
+                if (polygons[j].id == -1) continue; // Already merged
+                
+                // Try to merge polygon i and j
+                if (CanMergePolygons(i, j)) {
+                    MergeTwoPolygons(i, j);
+                    merged = true;
+                    break; // Restart from beginning after a merge
+                }
+            }
+            
+            if (merged) break;
         }
     }
     
-    // 2. Local fallback: only check immediate adjacent grid cells instead of ALL 200,000 nodes
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-            int checkGx = gx + dx;
-            int checkGy = gy + dy;
-            if (checkGx >= 0 && checkGx < gridWidth && checkGy >= 0 && checkGy < gridHeight) {
-                int nodeId = nodeGrid[checkGx][checkGy];
-                if (nodeId >= 0 && nodeId < (int)nodes.size() && nodes[nodeId].Contains(position)) {
-                    return nodeId;
-                }
+    // Remove merged (invalidated) polygons and reindex
+    CompactPolygons();
+}
+
+
+bool NavMesh::CanMergePolygons(int idx1, int idx2) const {
+    if (idx1 < 0 || idx1 >= polygons.size()) return false;
+    if (idx2 < 0 || idx2 >= polygons.size()) return false;
+    
+    const NavPolygon& p1 = polygons[idx1];
+    const NavPolygon& p2 = polygons[idx2];
+    
+    // Check if they share an edge
+    if (!PolygonsShareEdge(idx1, idx2)) return false;
+    
+    // Check if result would be convex
+    std::vector<Vector2> merged = MergeVertices(p1, p2);
+    return IsConvex(merged);
+}
+
+std::vector<Vector2> NavMesh::MergeVertices(const NavPolygon& p1, const NavPolygon& p2) const {
+    // Find all unique vertices from both polygons
+    std::vector<Vector2> allVertices;
+    
+    for (const Vector2& v : p1.vertices) {
+        allVertices.push_back(v);
+    }
+    
+    for (const Vector2& v : p2.vertices) {
+        // Only add if not already in list
+        bool exists = false;
+        for (const Vector2& existing : allVertices) {
+            if (existing.Distance(v) < 1.0f) {
+                exists = true;
+                break;
             }
         }
+        if (!exists) {
+            allVertices.push_back(v);
+        }
+    }
+    
+    // Sort vertices by angle from centroid (creates convex hull)
+    Vector2 centroid(0, 0);
+    for (const Vector2& v : allVertices) {
+        centroid.x += v.x;
+        centroid.y += v.y;
+    }
+    centroid.x /= allVertices.size();
+    centroid.y /= allVertices.size();
+    
+    std::sort(allVertices.begin(), allVertices.end(), 
+        [centroid](const Vector2& a, const Vector2& b) {
+            float angleA = atan2(a.y - centroid.y, a.x - centroid.x);
+            float angleB = atan2(b.y - centroid.y, b.x - centroid.x);
+            return angleA < angleB;
+        });
+    
+    return allVertices;
+}
+
+bool NavMesh::IsConvex(const std::vector<Vector2>& vertices) const {
+    if (vertices.size() < 3) return false;
+    if (vertices.size() > 8) return false; // Limit complexity
+    
+    int n = vertices.size();
+    bool hasPositive = false;
+    bool hasNegative = false;
+    
+    for (int i = 0; i < n; i++) {
+        Vector2 v1 = vertices[i];
+        Vector2 v2 = vertices[(i + 1) % n];
+        Vector2 v3 = vertices[(i + 2) % n];
+        
+        Vector2 edge1 = v2 - v1;
+        Vector2 edge2 = v3 - v2;
+        
+        // Cross product
+        float cross = edge1.x * edge2.y - edge1.y * edge2.x;
+        
+        if (cross > 0.01f) hasPositive = true;
+        if (cross < -0.01f) hasNegative = true;
+    }
+    
+    // Convex if all cross products have same sign
+    return !(hasPositive && hasNegative);
+}
+
+void NavMesh::MergeTwoPolygons(int idx1, int idx2) {
+    NavPolygon& p1 = polygons[idx1];
+    NavPolygon& p2 = polygons[idx2];
+    
+    // Merge vertices
+    std::vector<Vector2> merged = MergeVertices(p1, p2);
+    
+    p1.vertices = merged;
+    p1.CalculateCenter();
+    
+    // Merge neighbors (same as before)
+    std::unordered_set<int> mergedNeighbors;
+    
+    for (int n : p1.neighbors) {
+        if (n != idx2) mergedNeighbors.insert(n);
+    }
+    
+    for (int n : p2.neighbors) {
+        if (n != idx1) mergedNeighbors.insert(n);
+    }
+    
+    p1.neighbors.clear();
+    for (int n : mergedNeighbors) {
+        p1.neighbors.push_back(n);
+        
+        NavPolygon& neighbor = polygons[n];
+        for (int& nb : neighbor.neighbors) {
+            if (nb == idx2) {
+                nb = idx1;
+            }
+        }
+    }
+    
+    // Mark p2 as merged
+    p2.id = -1;
+    p2.vertices.clear();
+    p2.neighbors.clear();
+    
+    // Update spatial grid
+    UpdateSpatialGridForPolygon(idx1, p1);
+    ClearSpatialGridForPolygon(idx2);
+}
+
+void NavMesh::UpdateSpatialGridForPolygon(int polyId, const NavPolygon& poly) {
+    Rect box = GetPolygonBoundingBox(poly);
+    
+    int startX = box.x / GRID_CELL_SIZE;
+    int startY = box.y / GRID_CELL_SIZE;
+    int endX = (box.x + box.width) / GRID_CELL_SIZE;
+    int endY = (box.y + box.height) / GRID_CELL_SIZE;
+    
+    for (int y = startY; y <= endY && y < gridHeight; y++) {
+        for (int x = startX; x <= endX && x < gridWidth; x++) {
+            if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
+                spatialGrid[x][y] = polyId;
+            }
+        }
+    }
+}
+
+Rect NavMesh::GetPolygonBoundingBox(const NavPolygon& poly) const {
+    if (poly.vertices.empty()) return Rect(0, 0, 0, 0);
+    
+    float minX = poly.vertices[0].x;
+    float minY = poly.vertices[0].y;
+    float maxX = poly.vertices[0].x;
+    float maxY = poly.vertices[0].y;
+    
+    for (const Vector2& v : poly.vertices) {
+        minX = std::min(minX, v.x);
+        minY = std::min(minY, v.y);
+        maxX = std::max(maxX, v.x);
+        maxY = std::max(maxY, v.y);
+    }
+    
+    return Rect((int)minX, (int)minY, (int)(maxX - minX), (int)(maxY - minY));
+}
+
+void NavMesh::ClearSpatialGridForPolygon(int polyId) {
+    for (int y = 0; y < gridHeight; y++) {
+        for (int x = 0; x < gridWidth; x++) {
+            if (spatialGrid[x][y] == polyId) {
+                spatialGrid[x][y] = -1;
+            }
+        }
+    }
+}
+
+
+void NavMesh::ConnectNeighbors() {
+    // For each polygon, find neighbors by checking edge adjacency
+    for (size_t i = 0; i < polygons.size(); i++) {
+        for (size_t j = i + 1; j < polygons.size(); j++) {
+            if (PolygonsShareEdge(i, j)) {
+                polygons[i].neighbors.push_back(j);
+                polygons[j].neighbors.push_back(i);
+            }
+        }
+    }
+}
+
+void NavMesh::CompactPolygons() {
+    std::vector<NavPolygon> compacted;
+    std::unordered_map<int, int> oldToNew; // Map old ID to new ID
+    
+    // Collect valid polygons and build ID mapping
+    for (size_t i = 0; i < polygons.size(); i++) {
+        if (polygons[i].id != -1) {
+            int newId = compacted.size();
+            oldToNew[i] = newId;
+            
+            NavPolygon poly = polygons[i];
+            poly.id = newId;
+            compacted.push_back(poly);
+        }
+    }
+    
+    // Update neighbor references
+    for (NavPolygon& poly : compacted) {
+        for (int& neighbor : poly.neighbors) {
+            if (oldToNew.count(neighbor)) {
+                neighbor = oldToNew[neighbor];
+            }
+        }
+    }
+    
+    // Update spatial grid
+    for (int y = 0; y < gridHeight; y++) {
+        for (int x = 0; x < gridWidth; x++) {
+            int oldId = spatialGrid[x][y];
+            if (oldId >= 0 && oldToNew.count(oldId)) {
+                spatialGrid[x][y] = oldToNew[oldId];
+            }
+        }
+    }
+    
+    polygons = std::move(compacted);
+}
+
+bool NavMesh::PolygonsShareEdge(int poly1, int poly2) const {
+    if (poly1 < 0 || poly1 >= polygons.size()) return false;
+    if (poly2 < 0 || poly2 >= polygons.size()) return false;
+    
+    const NavPolygon& p1 = polygons[poly1];
+    const NavPolygon& p2 = polygons[poly2];
+    
+    // Check if any edge from p1 is shared with p2
+    for (size_t i = 0; i < p1.vertices.size(); i++) {
+        Vector2 a1 = p1.vertices[i];
+        Vector2 a2 = p1.vertices[(i + 1) % p1.vertices.size()];
+        
+        for (size_t j = 0; j < p2.vertices.size(); j++) {
+            Vector2 b1 = p2.vertices[j];
+            Vector2 b2 = p2.vertices[(j + 1) % p2.vertices.size()];
+            
+            // Check if edges are the same (reversed order is OK)
+            bool sameEdge = (a1.Distance(b1) < 1.0f && a2.Distance(b2) < 1.0f) ||
+                           (a1.Distance(b2) < 1.0f && a2.Distance(b1) < 1.0f);
+            
+            if (sameEdge) return true;
+        }
+    }
+    
+    return false;
+}
+
+NavMesh::Edge NavMesh::GetSharedEdge(int poly1, int poly2) const {
+    const NavPolygon& p1 = polygons[poly1];
+    const NavPolygon& p2 = polygons[poly2];
+    
+    for (size_t i = 0; i < p1.vertices.size(); i++) {
+        Vector2 a1 = p1.vertices[i];
+        Vector2 a2 = p1.vertices[(i + 1) % p1.vertices.size()];
+        
+        for (size_t j = 0; j < p2.vertices.size(); j++) {
+            Vector2 b1 = p2.vertices[j];
+            Vector2 b2 = p2.vertices[(j + 1) % p2.vertices.size()];
+            
+            bool sameEdge = (a1.Distance(b1) < 1.0f && a2.Distance(b2) < 1.0f) ||
+                           (a1.Distance(b2) < 1.0f && a2.Distance(b1) < 1.0f);
+            
+            if (sameEdge) {
+                return Edge(a1, a2);
+            }
+        }
+    }
+    
+    return Edge(Vector2(0, 0), Vector2(0, 0));
+}
+
+int NavMesh::GetPolygonAt(const Vector2& position) const {
+    int tx = (int)(position.x / GRID_CELL_SIZE);
+    int ty = (int)(position.y / GRID_CELL_SIZE);
+    
+    if (tx >= 0 && tx < gridWidth && ty >= 0 && ty < gridHeight) {
+        return spatialGrid[tx][ty];
     }
     
     return -1;
 }
 
-const NavNode* NavMesh::GetNode(int nodeId) const {
-    if (nodeId < 0 || nodeId >= nodes.size()) return nullptr;
-    return &nodes[nodeId];
+const NavPolygon* NavMesh::GetPolygon(int id) const {
+    if (id < 0 || id >= polygons.size()) return nullptr;
+    return &polygons[id];
 }
 
-std::vector<int> NavMesh::GetNodesInRadius(const Vector2& position, float radius) const {
-    std::vector<int> result;
-    std::unordered_set<int> visited;
-    
-    int startNode = GetNodeAt(position);
-    if (startNode < 0) return result;
-    
-    std::queue<int> toCheck;
-    toCheck.push(startNode);
-    visited.insert(startNode);
-    
-    while (!toCheck.empty()) {
-        int currentId = toCheck.front();
-        toCheck.pop();
-        
-        if (currentId < 0 || currentId >= nodes.size()) continue;
-        
-        const NavNode& current = nodes[currentId];
-        
-        // Check if this node is within radius
-        float distToCenter = position.Distance(
-            Vector2(current.center.x, current.center.y));
-        
-        if (distToCenter <= radius) {
-            result.push_back(currentId);
-            
-            for (int neighborId : current.neighbors) {
-                if (visited.find(neighborId) == visited.end()) {
-                    visited.insert(neighborId);
-                    toCheck.push(neighborId);
-                }
-            }
-        }
-    }
-    
-    return result;
+bool NavMesh::IsPointWalkable(const Vector2& point) const {
+    return GetPolygonAt(point) >= 0;
 }
 
 NavPath NavMesh::FindPath(const Vector2& start, const Vector2& end) const {
     NavPath result;
     
-    int startNode = GetNodeAt(start);
-    int endNode = GetNodeAt(end);
+    int startPoly = GetPolygonAt(start);
+    int endPoly = GetPolygonAt(end);
     
-    if (startNode < 0 || endNode < 0) {
-        // Can't find path - return empty
+    if (startPoly < 0 || endPoly < 0) {
         return result;
     }
     
-    if (startNode == endNode) {
-        result.nodeIds = {startNode};
+    if (startPoly == endPoly) {
+        result.polygonIds = {startPoly};
         result.waypoints = {end};
         result.currentWaypointIndex = 0;
         return result;
     }
     
-    // A* on NavMesh nodes
+    // A* on polygons
     std::unordered_map<int, float> gCost;
     std::unordered_map<int, float> fCost;
     std::unordered_map<int, int> parent;
@@ -215,33 +525,27 @@ NavPath NavMesh::FindPath(const Vector2& start, const Vector2& end) const {
     
     std::priority_queue<int, std::vector<int>, decltype(compare)> open(compare);
     
-    gCost[startNode] = 0;
-    fCost[startNode] = Heuristic(startNode, endNode);
-    open.push(startNode);
+    gCost[startPoly] = 0;
+    fCost[startPoly] = Heuristic(startPoly, endPoly);
+    open.push(startPoly);
     
-    int iterations = 0;
-    const int MAX_ITERATIONS = 5000;
-    
-    while (!open.empty() && iterations < MAX_ITERATIONS) {
-        iterations++;
-        
+    while (!open.empty()) {
         int current = open.top();
         open.pop();
         
-        if (current == endNode) {
-            // Reconstruct path
-            std::vector<int> path;
-            int node = endNode;
-            while (node != startNode) {
-                path.push_back(node);
-                if (parent.find(node) == parent.end()) break;
+        if (current == endPoly) {
+            // Reconstruct polygon path
+            std::vector<int> polyPath;
+            int node = endPoly;
+            while (node != startPoly) {
+                polyPath.push_back(node);
                 node = parent[node];
             }
-            path.push_back(startNode);
-            std::reverse(path.begin(), path.end());
+            polyPath.push_back(startPoly);
+            std::reverse(polyPath.begin(), polyPath.end());
             
-            result.nodeIds = path;
-            result.waypoints = SmoothPath(path, start, end);
+            result.polygonIds = polyPath;
+            result.waypoints = FunnelAlgorithm(polyPath, start, end);
             result.currentWaypointIndex = 0;
             return result;
         }
@@ -249,204 +553,91 @@ NavPath NavMesh::FindPath(const Vector2& start, const Vector2& end) const {
         if (closed.find(current) != closed.end()) continue;
         closed.insert(current);
         
-        if (current < 0 || current >= nodes.size()) continue;
-        
-        const NavNode& node = nodes[current];
-        for (int neighborId : node.neighbors) {
-            if (closed.find(neighborId) != closed.end()) continue;
-            if (neighborId < 0 || neighborId >= nodes.size()) continue;
+        for (int neighbor : polygons[current].neighbors) {
+            if (closed.find(neighbor) != closed.end()) continue;
             
-            float edgeCost = Vector2(
-                nodes[current].center.x, nodes[current].center.y
-            ).Distance(Vector2(
-                nodes[neighborId].center.x, nodes[neighborId].center.y
-            ));
-            
+            float edgeCost = polygons[current].center.Distance(polygons[neighbor].center);
             float newGCost = gCost[current] + edgeCost;
             
-            if (!gCost.count(neighborId) || newGCost < gCost[neighborId]) {
-                gCost[neighborId] = newGCost;
-                fCost[neighborId] = newGCost + Heuristic(neighborId, endNode);
-                parent[neighborId] = current;
-                open.push(neighborId);
+            if (!gCost.count(neighbor) || newGCost < gCost[neighbor]) {
+                gCost[neighbor] = newGCost;
+                fCost[neighbor] = newGCost + Heuristic(neighbor, endPoly);
+                parent[neighbor] = current;
+                open.push(neighbor);
             }
         }
     }
     
-    return result; // No path found
+    return result;
 }
 
-Vector2 NavMesh::GetRandomPoint() const {
-    if (nodes.empty()) return Vector2(0, 0);
-    
-    const NavNode& node = nodes[rand() % nodes.size()];
-    return Vector2(node.center.x, node.center.y);
-}
-
-void NavMesh::GenerateNodes() {
-    if (!map) return;
-    
-    nodes.clear();
-    
-    // Create nodes for walkable areas
-    int nodeId = 0;
-    for (int y = 0; y < map->GetHeight(); y++) {
-        for (int x = 0; x < map->GetWidth(); x++) {
-            if (map->IsWalkable(x, y) && !map->IsTileBlockedByStaticEntity(x, y, -1)) {
-                // Create a NavNode for this tile
-                NavNode node(nodeId);
-                
-                float worldX = x * 32.0f;
-                float worldY = y * 32.0f;
-                
-                node.center = Point2D(worldX + 16, worldY + 16);
-                node.vertices = {
-                    Point2D(worldX, worldY),
-                    Point2D(worldX + 32, worldY),
-                    Point2D(worldX + 32, worldY + 32),
-                    Point2D(worldX, worldY + 32)
-                };
-                
-                // Mark grid cells
-                int gridWidth = map->GetWidth() * GRID_RESOLUTION;
-                int gridHeight = map->GetHeight() * GRID_RESOLUTION;
-                
-                for (int gy = 0; gy < GRID_RESOLUTION; gy++) {
-                    for (int gx = 0; gx < GRID_RESOLUTION; gx++) {
-                        int gridX = x * GRID_RESOLUTION + gx;
-                        int gridY = y * GRID_RESOLUTION + gy;
-                        if (gridX >= 0 && gridX < gridWidth && 
-                            gridY >= 0 && gridY < gridHeight) {
-                            nodeGrid[gridX][gridY] = nodeId;
-                        }
-                    }
-                }
-                
-                nodes.push_back(node);
-                nodeId++;
-            }
-        }
-    }
-}
-
-void NavMesh::SimplifyNodes() {
-    // Simplified version - for production you'd use convex decomposition
-    // For now, we keep tile-based nodes
-}
-
-void NavMesh::ConnectNeighbors() {
-    // 8 directions: 4 cardinal + 4 diagonal
-    const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-    const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
-    
-    int gridWidth = map->GetWidth() * GRID_RESOLUTION;
-    int gridHeight = map->GetHeight() * GRID_RESOLUTION;
-
-    // O(N) Loop: only check the 8 adjacent tiles instead of all 200,000 nodes!
-    for (size_t i = 0; i < nodes.size(); i++) {
-        Point2D center = nodes[i].center;
-        int tileX = (int)(center.x / 32.0f);
-        int tileY = (int)(center.y / 32.0f);
-
-        for (int dir = 0; dir < 8; dir++) {
-            int nx = tileX + dx[dir];
-            int ny = tileY + dy[dir];
-
-            // Check map bounds
-            if (nx < 0 || nx >= map->GetWidth() || ny < 0 || ny >= map->GetHeight()) {
-                continue;
-            }
-
-            // Look up the node ID at the center of the adjacent tile directly from nodeGrid
-            int gridX = nx * GRID_RESOLUTION + (GRID_RESOLUTION / 2);
-            int gridY = ny * GRID_RESOLUTION + (GRID_RESOLUTION / 2);
-
-            if (gridX >= 0 && gridX < gridWidth && gridY >= 0 && gridY < gridHeight) {
-                int neighborId = nodeGrid[gridX][gridY];
-
-                // If a valid neighbor node exists there
-                if (neighborId >= 0 && neighborId != (int)i) {
-                    // Prevent diagonal corner-cutting through obstacles
-                    if (dir >= 4) { // Diagonal check
-                        int checkX1 = tileX + dx[dir];
-                        int checkY1 = tileY;
-                        int checkX2 = tileX;
-                        int checkY2 = tileY + dy[dir];
-
-                        int gX1 = checkX1 * GRID_RESOLUTION + (GRID_RESOLUTION / 2);
-                        int gY1 = checkY1 * GRID_RESOLUTION + (GRID_RESOLUTION / 2);
-                        int gX2 = checkX2 * GRID_RESOLUTION + (GRID_RESOLUTION / 2);
-                        int gY2 = checkY2 * GRID_RESOLUTION + (GRID_RESOLUTION / 2);
-
-                        bool clear1 = (gX1 >= 0 && gX1 < gridWidth && gY1 >= 0 && gY1 < gridHeight && nodeGrid[gX1][gY1] >= 0);
-                        bool clear2 = (gX2 >= 0 && gX2 < gridWidth && gY2 >= 0 && gY2 < gridHeight && nodeGrid[gX2][gY2] >= 0);
-
-                        if (!clear1 || !clear2) continue; // Block diagonal if corner is solid
-                    }
-
-                    nodes[i].neighbors.push_back(neighborId);
-                }
-            }
-        }
-    }
-}
-
-
-bool NavMesh::AreNodesAdjacent(const NavNode& a, const NavNode& b) const {
-    // Two nodes are adjacent if their centers are within ~1-2 tiles
-    int tileSize = 32;
-    int dx = std::abs(a.center.x - b.center.x);
-    int dy = std::abs(a.center.y - b.center.y);
-    
-    // Adjacent tiles (horizontal, vertical, or diagonal)
-    return (dx == tileSize && dy == 0) || 
-           (dx == 0 && dy == tileSize) ||
-           (dx == tileSize && dy == tileSize);
-}
-
-float NavMesh::Heuristic(int nodeA, int nodeB) const {
-    if (nodeA < 0 || nodeA >= nodes.size() || 
-        nodeB < 0 || nodeB >= nodes.size()) {
+float NavMesh::Heuristic(int polyA, int polyB) const {
+    if (polyA < 0 || polyA >= polygons.size() || polyB < 0 || polyB >= polygons.size()) {
         return std::numeric_limits<float>::max();
     }
     
-    int dx = nodes[nodeA].center.x - nodes[nodeB].center.x;
-    int dy = nodes[nodeA].center.y - nodes[nodeB].center.y;
-    return std::sqrt(dx * dx + dy * dy);
+    return polygons[polyA].center.Distance(polygons[polyB].center);
 }
 
-std::vector<Vector2> NavMesh::SmoothPath(const std::vector<int>& nodePath,
-                                         const Vector2& start, 
-                                         const Vector2& end) const {
+std::vector<Vector2> NavMesh::FunnelAlgorithm(const std::vector<int>& polygonPath,
+                                               const Vector2& start,
+                                               const Vector2& end) const {
     std::vector<Vector2> waypoints;
     waypoints.push_back(start);
+
+    if (polygonPath.empty()) {
+        waypoints.push_back(end);
+        return waypoints;
+    }
     
-    if (nodePath.size() > 2) {
-        // Add intermediate waypoints (node centers)
-        for (size_t i = 1; i < nodePath.size() - 1; i++) {
-            int nodeId = nodePath[i];
-            if (nodeId >= 0 && nodeId < nodes.size()) {
-                Vector2 center(nodes[nodeId].center.x, nodes[nodeId].center.y);
-                waypoints.push_back(center);
-            }
+    if (polygonPath.size() == 1) {
+        waypoints.push_back(end);
+        return waypoints;
+    }
+    
+    // For each polygon transition, add a waypoint
+    for (size_t i = 0; i < polygonPath.size() - 1; i++) {
+        int currentPoly = polygonPath[i];
+        int nextPoly = polygonPath[i + 1];
+        
+        if (currentPoly < 0 || currentPoly >= polygons.size()) continue;
+        if (nextPoly < 0 || nextPoly >= polygons.size()) continue;
+        
+        // Find the shared edge between polygons
+        Edge portal = GetSharedEdge(currentPoly, nextPoly);
+        
+        // Add midpoint of portal as waypoint
+        Vector2 midpoint(
+            (portal.a.x + portal.b.x) * 0.5f,
+            (portal.a.y + portal.b.y) * 0.5f
+        );
+        
+        // Only add if it's not too close to previous waypoint
+        if (waypoints.empty() || waypoints.back().Distance(midpoint) > 10.0f) {
+            waypoints.push_back(midpoint);
         }
     }
     
-    waypoints.push_back(end);
+    // Always end at the end position
+    if (waypoints.empty() || waypoints.back().Distance(end) > 10.0f) {
+        waypoints.push_back(end);
+    }
+    
     return waypoints;
 }
 
 void NavMesh::DebugRender(Renderer* renderer) const {
     if (!renderer) return;
     
-    // Draw navmesh nodes
-    for (const NavNode& node : nodes) {
-        // Draw node polygon
-        for (size_t i = 0; i < node.vertices.size(); i++) {
-            size_t j = (i + 1) % node.vertices.size();
-            Vector2 a(node.vertices[i].x, node.vertices[i].y);
-            Vector2 b(node.vertices[j].x, node.vertices[j].y);
-            renderer->DrawLine(a, b, glm::vec3(0.0f, 0.5f, 0.0f), 1.0f);
+    for (const NavPolygon& poly : polygons) {
+        // Draw polygon edges
+        for (size_t i = 0; i < poly.vertices.size(); i++) {
+            Vector2 a = poly.vertices[i];
+            Vector2 b = poly.vertices[(i + 1) % poly.vertices.size()];
+            renderer->DrawLine(a, b, glm::vec3(0.0f, 1.0f, 0.0f), 2.0f);
         }
+        
+        // Draw center
+        renderer->DrawCircle(poly.center, 4.0f, glm::vec3(1.0f, 1.0f, 0.0f));
     }
 }

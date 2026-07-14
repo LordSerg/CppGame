@@ -231,13 +231,13 @@ void Game::PlaceStartingUnits() {
     SteeringSystem* steeringSys = map->GetSteeringSystem();
     
     // Player starting units
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 15; i++) {
         auto peasant = std::make_shared<Peasant>(
             map->GetNextEntityId(), 
             humanPlayerId
         );
         peasant->SetPosition(
-            (playerStart.x + i * 2) * 32.0f + 16.0f, 
+            (playerStart.x + i) * 32.0f + 16.0f, 
             playerStart.y * 32.0f + 16.0f
         );
         peasant->SetSteeringSystem(steeringSys);

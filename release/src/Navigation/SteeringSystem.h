@@ -38,9 +38,6 @@ public:
     // Formation movement
     std::vector<Vector2> CalculateFormationPositions(
         const Vector2& center, int count, float spacing = 48.0f);
-
-    Vector2 Flee(const Vector2& position, const Vector2& threat);
-    std::vector<Vector2> CalculateFlowField(const Vector2& destination, const std::vector<Unit*>& units);
     
 private:
     NavMesh* navMesh;

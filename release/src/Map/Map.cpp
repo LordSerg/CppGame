@@ -182,6 +182,9 @@ void Map::Render(Renderer* renderer, int playerId) {
     renderer->DrawLine(topRight, bottomRight, glm::vec3(1.0f, 0.0f, 0.0f), 3.0f);
     renderer->DrawLine(bottomRight, bottomLeft, glm::vec3(1.0f, 0.0f, 0.0f), 3.0f);
     renderer->DrawLine(bottomLeft, topLeft, glm::vec3(1.0f, 0.0f, 0.0f), 3.0f);
+
+    //draw debug mesh
+    GetNavMesh()->DebugRender(renderer);
 }
 
 Tile* Map::GetTile(int x, int y) {
@@ -550,15 +553,17 @@ void Map::GenerateTerrain() {
         for (int x = 0; x < width; x++) {
             int roll = dis(gen);
             
-            if (roll < 2) {
-                tiles[y][x] = Tile(x, y, TileType::WATER);
-            } else if (roll < 5) {
-                tiles[y][x] = Tile(x, y, TileType::STONE);
-            } else if (roll < 10) {
-                tiles[y][x] = Tile(x, y, TileType::DIRT);
-            } else {
-                tiles[y][x] = Tile(x, y, TileType::GRASS);
-            }
+            //if (roll == 0) {
+            //    tiles[y][x] = Tile(x, y, TileType::WATER);
+            //} else if (roll == 0) {
+            //    tiles[y][x] = Tile(x, y, TileType::STONE);
+            //} else if (roll == 0) {
+            //    tiles[y][x] = Tile(x, y, TileType::DIRT);
+            //} else {
+            //    tiles[y][x] = Tile(x, y, TileType::GRASS);
+            //}
+            tiles[y][x] = Tile(x, y, TileType::GRASS);
+
         }
     }
 }
