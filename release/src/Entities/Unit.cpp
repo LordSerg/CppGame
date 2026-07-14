@@ -168,6 +168,23 @@ void Unit::Render(Renderer* renderer) {
         Rect(renderPos.x, position.y - 16.0f - 5.0f, barWidth, 3),
         glm::vec3(0.0f, 1.0f, 0.0f)
     );
+
+    // DEBUG: Render path
+    if (!navPath.waypoints.empty()) {
+        // Draw path lines
+        Vector2 prev = position;
+        for (size_t i = navPath.currentWaypointIndex; i < navPath.waypoints.size(); i++) {
+            Vector2 wp = navPath.waypoints[i];
+            
+            // Line from previous to waypoint
+            renderer->DrawLine(prev, wp, glm::vec3(1.0f, 1.0f, 0.0f), 2.0f);
+            
+            // Waypoint marker
+            renderer->DrawCircle(wp, 4.0f, glm::vec3(1.0f, 0.0f, 1.0f));
+            
+            prev = wp;
+        }
+    }
 }
 
 void Unit::GiveCommand(std::shared_ptr<Command> command, bool queue) {

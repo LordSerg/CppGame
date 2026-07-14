@@ -70,6 +70,16 @@ private:
                                          const Vector2& start,
                                          const Vector2& end) const;
     
+    // Find best crossing point on a portal segment
+    Vector2 ClosestPointOnSegment(const Vector2& from, const Vector2& to,
+                                  const Vector2& segA, const Vector2& segB) const;
+    
+    // Remove unnecessary waypoints
+    std::vector<Vector2> OptimizePath(const std::vector<Vector2>& path) const;
+    
+    // Check if straight line is walkable
+    bool HasLineOfSight(const Vector2& from, const Vector2& to) const;
+    
     struct Edge {
         Vector2 a, b;
         Edge(const Vector2& pa, const Vector2& pb) : a(pa), b(pb) {}
@@ -92,6 +102,9 @@ private:
     void UpdateSpatialGridForPolygon(int polyId, const NavPolygon& poly);
     void ClearSpatialGridForPolygon(int polyId);
     void CompactPolygons();
+
+    // Triangle signed area * 2 (used by funnel algorithm)
+    static float TriangleArea2(const Vector2& a, const Vector2& b, const Vector2& c);
 };
 
 #endif // NAVMESH_H
