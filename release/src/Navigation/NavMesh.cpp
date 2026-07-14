@@ -8,6 +8,7 @@
 #include <limits>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <iostream>
 
 // NavPolygon implementation
 bool NavPolygon::Contains(const Vector2& point) const {
@@ -98,6 +99,18 @@ void NavMesh::Build() {
     BuildPolygons();
     MergeAdjacentRectangles();
     ConnectNeighbors();
+
+    // Debug stats
+    int isolated = 0;
+    for (const auto& poly : polygons) {
+        if (poly.neighbors.empty()) {
+            isolated++;
+        }
+    }
+
+    std::cout << "NavMesh build complete:\n";
+    std::cout << "  polygons: " << polygons.size() << "\n";
+    std::cout << "  isolated polygons: " << isolated << "\n";
 }
 
 void NavMesh::BuildPolygons() {
@@ -346,19 +359,19 @@ void NavMesh::UpdateSpatialGridForPolygon(int polyId, const NavPolygon& poly) {
 
 Rect NavMesh::GetPolygonBoundingBox(const NavPolygon& poly) const {
     if (poly.vertices.empty()) return Rect(0, 0, 0, 0);
-    
+
     float minX = poly.vertices[0].x;
     float minY = poly.vertices[0].y;
     float maxX = poly.vertices[0].x;
     float maxY = poly.vertices[0].y;
-    
+
     for (const Vector2& v : poly.vertices) {
         minX = std::min(minX, v.x);
         minY = std::min(minY, v.y);
         maxX = std::max(maxX, v.x);
         maxY = std::max(maxY, v.y);
     }
-    
+
     return Rect((int)minX, (int)minY, (int)(maxX - minX), (int)(maxY - minY));
 }
 
@@ -374,12 +387,16 @@ void NavMesh::ClearSpatialGridForPolygon(int polyId) {
 
 
 void NavMesh::ConnectNeighbors() {
-    // For each polygon, find neighbors by checking edge adjacency
+    // Clear old neighbors first
+    for (auto& poly : polygons) {
+        poly.neighbors.clear();
+    }
+
     for (size_t i = 0; i < polygons.size(); i++) {
         for (size_t j = i + 1; j < polygons.size(); j++) {
-            if (PolygonsShareEdge(i, j)) {
-                polygons[i].neighbors.push_back(j);
-                polygons[j].neighbors.push_back(i);
+            if (PolygonsShareEdge((int)i, (int)j)) {
+                polygons[i].neighbors.push_back((int)j);
+                polygons[j].neighbors.push_back((int)i);
             }
         }
     }
@@ -424,53 +441,73 @@ void NavMesh::CompactPolygons() {
 }
 
 bool NavMesh::PolygonsShareEdge(int poly1, int poly2) const {
-    if (poly1 < 0 || poly1 >= polygons.size()) return false;
-    if (poly2 < 0 || poly2 >= polygons.size()) return false;
-    
-    const NavPolygon& p1 = polygons[poly1];
-    const NavPolygon& p2 = polygons[poly2];
-    
-    // Check if any edge from p1 is shared with p2
-    for (size_t i = 0; i < p1.vertices.size(); i++) {
-        Vector2 a1 = p1.vertices[i];
-        Vector2 a2 = p1.vertices[(i + 1) % p1.vertices.size()];
-        
-        for (size_t j = 0; j < p2.vertices.size(); j++) {
-            Vector2 b1 = p2.vertices[j];
-            Vector2 b2 = p2.vertices[(j + 1) % p2.vertices.size()];
-            
-            // Check if edges are the same (reversed order is OK)
-            bool sameEdge = (a1.Distance(b1) < 1.0f && a2.Distance(b2) < 1.0f) ||
-                           (a1.Distance(b2) < 1.0f && a2.Distance(b1) < 1.0f);
-            
-            if (sameEdge) return true;
+    if (poly1 < 0 || poly1 >= (int)polygons.size()) return false;
+    if (poly2 < 0 || poly2 >= (int)polygons.size()) return false;
+
+    const Rect a = GetPolygonBoundingBox(polygons[poly1]);
+    const Rect b = GetPolygonBoundingBox(polygons[poly2]);
+
+    // Vertical adjacency:
+    // right side of A touches left side of B, or vice versa
+    bool verticalTouch =
+        (a.x + a.width == b.x || b.x + b.width == a.x);
+
+    if (verticalTouch) {
+        int overlapTop = std::max(a.y, b.y);
+        int overlapBottom = std::min(a.y + a.height, b.y + b.height);
+
+        // Need actual positive overlap, not just corner touching
+        if (overlapBottom > overlapTop) {
+            return true;
         }
     }
-    
+
+    // Horizontal adjacency:
+    // bottom side of A touches top side of B, or vice versa
+    bool horizontalTouch =
+        (a.y + a.height == b.y || b.y + b.height == a.y);
+
+    if (horizontalTouch) {
+        int overlapLeft = std::max(a.x, b.x);
+        int overlapRight = std::min(a.x + a.width, b.x + b.width);
+
+        // Need actual positive overlap, not just corner touching
+        if (overlapRight > overlapLeft) {
+            return true;
+        }
+    }
+
     return false;
 }
 
 NavMesh::Edge NavMesh::GetSharedEdge(int poly1, int poly2) const {
-    const NavPolygon& p1 = polygons[poly1];
-    const NavPolygon& p2 = polygons[poly2];
-    
-    for (size_t i = 0; i < p1.vertices.size(); i++) {
-        Vector2 a1 = p1.vertices[i];
-        Vector2 a2 = p1.vertices[(i + 1) % p1.vertices.size()];
-        
-        for (size_t j = 0; j < p2.vertices.size(); j++) {
-            Vector2 b1 = p2.vertices[j];
-            Vector2 b2 = p2.vertices[(j + 1) % p2.vertices.size()];
-            
-            bool sameEdge = (a1.Distance(b1) < 1.0f && a2.Distance(b2) < 1.0f) ||
-                           (a1.Distance(b2) < 1.0f && a2.Distance(b1) < 1.0f);
-            
-            if (sameEdge) {
-                return Edge(a1, a2);
-            }
+    const Rect a = GetPolygonBoundingBox(polygons[poly1]);
+    const Rect b = GetPolygonBoundingBox(polygons[poly2]);
+
+    // Vertical shared boundary
+    if (a.x + a.width == b.x || b.x + b.width == a.x) {
+        float sharedX = (a.x + a.width == b.x) ? (float)(a.x + a.width) : (float)(b.x + b.width);
+
+        float top = (float)std::max(a.y, b.y);
+        float bottom = (float)std::min(a.y + a.height, b.y + b.height);
+
+        if (bottom > top) {
+            return Edge(Vector2(sharedX, top), Vector2(sharedX, bottom));
         }
     }
-    
+
+    // Horizontal shared boundary
+    if (a.y + a.height == b.y || b.y + b.height == a.y) {
+        float sharedY = (a.y + a.height == b.y) ? (float)(a.y + a.height) : (float)(b.y + b.height);
+
+        float left = (float)std::max(a.x, b.x);
+        float right = (float)std::min(a.x + a.width, b.x + b.width);
+
+        if (right > left) {
+            return Edge(Vector2(left, sharedY), Vector2(right, sharedY));
+        }
+    }
+
     return Edge(Vector2(0, 0), Vector2(0, 0));
 }
 

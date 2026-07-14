@@ -4,6 +4,7 @@
 #include "../Systems/CommandSystem.h"
 #include "../Systems/MovementSystem.h"
 #include "../Graphics/Renderer.h"
+#include <iostream>
 
 // TODO: these numbers work good for fast game speed, but not very good for slow one
 const float Unit::REPATH_INTERVAL = 0.3f; // recalculate path every 0.3 seconds

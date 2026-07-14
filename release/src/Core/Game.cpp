@@ -141,6 +141,7 @@ void Game::StartNewGame(MapSize size) {
     // Initialize game systems
     map = std::make_unique<Map>(size);
     map->Initialize();
+
     
     resourceManager = std::make_unique<ResourceManager>();
     techTree = std::make_unique<TechTree>();
@@ -236,11 +237,32 @@ void Game::PlaceStartingUnits() {
             map->GetNextEntityId(), 
             humanPlayerId
         );
-        peasant->SetPosition(
+        
+        Vector2 startPos(
             (playerStart.x + i) * 32.0f + 16.0f, 
             playerStart.y * 32.0f + 16.0f
         );
+
+        if (map->GetNavMesh() && map->GetNavMesh()->GetPolygonAt(startPos) < 0) {
+            std::cerr << "WARNING: Unit starting position is not on navmesh!" << std::endl;
+            // Try to find nearby valid position
+            bool flag = false;
+            for (int dy = -5; dy <= 5; dy++) {
+                for (int dx = -5; dx <= 5; dx++) {
+                    Vector2 testPos(startPos.x + dx * 32, startPos.y + dy * 32);
+                    if (map->GetNavMesh()->GetPolygonAt(testPos) >= 0) {
+                        startPos = testPos;
+                        flag = true;
+                        break;
+                    }
+                }
+                if(flag) break; 
+            }
+        }
+
+        peasant->SetPosition(startPos.x, startPos.y);
         peasant->SetSteeringSystem(steeringSys);
+        peasant->SetMap(map.get());
         map->AddEntity(peasant);
         populationSystem->OnUnitCreated(humanPlayerId);
     }
@@ -264,12 +286,30 @@ void Game::PlaceStartingUnits() {
             map->GetNextEntityId(), 
             1 // AI player ID
         );
-        // Set position to TILE CENTER
-        peasant->SetPosition(
+        // Set position
+        Vector2 startPos(
             (aiStart.x + i * 2) * 32.0f + 16.0f, 
             aiStart.y * 32.0f + 16.0f
         );
+
+        if (map->GetNavMesh() && map->GetNavMesh()->GetPolygonAt(startPos) < 0) {
+            bool flag = false;
+            for (int dy = -5; dy <= 5; dy++) {
+                for (int dx = -5; dx <= 5; dx++) {
+                    Vector2 testPos(startPos.x + dx * 32, startPos.y + dy * 32);
+                    if (map->GetNavMesh()->GetPolygonAt(testPos) >= 0) {
+                        startPos = testPos;
+                        flag = true;
+                        break;
+                    }
+                }
+                if(flag) break;
+            }
+        }
+
+        peasant->SetPosition(startPos.x, startPos.y);
         peasant->SetSteeringSystem(steeringSys);
+        peasant->SetMap(map.get());
         map->AddEntity(peasant);
         populationSystem->OnUnitCreated(1);
     }

@@ -184,7 +184,7 @@ void Map::Render(Renderer* renderer, int playerId) {
     renderer->DrawLine(bottomLeft, topLeft, glm::vec3(1.0f, 0.0f, 0.0f), 3.0f);
 
     //draw debug mesh
-    GetNavMesh()->DebugRender(renderer);
+    //GetNavMesh()->DebugRender(renderer);
 }
 
 Tile* Map::GetTile(int x, int y) {
