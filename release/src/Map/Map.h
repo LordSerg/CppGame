@@ -8,6 +8,7 @@
 #include "../Entities/Obstacle.h"
 #include "../Navigation/NavMesh.h"
 #include "../Navigation/SteeringSystem.h"
+#include "MapGenerator.h"
 #include <vector>
 #include <memory>
 

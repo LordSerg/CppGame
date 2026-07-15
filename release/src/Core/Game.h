@@ -74,6 +74,8 @@ private:
     std::unique_ptr<InputHandler> inputHandler;
     std::unique_ptr<AudioManager> audioManager;
     std::unique_ptr<SaveSystem> saveSystem;
+
+    std::unique_ptr<NavMesh> navMesh;
     
     // Game systems
     std::unique_ptr<Map> map;

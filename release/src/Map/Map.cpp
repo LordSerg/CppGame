@@ -31,7 +31,7 @@ Map::Map(MapSize size)
     , height((int)size)
     , nextEntityId(1)
 {
-    fogOfWar = std::make_unique<FogOfWar>(width, height, 8);
+    //fogOfWar = std::make_unique<FogOfWar>(width, height, 8);
 }
 
 Map::~Map() {
@@ -39,16 +39,18 @@ Map::~Map() {
 
 void Map::Initialize() {
     // Initialize tiles
-    tiles.resize(height);
-    for (int y = 0; y < height; y++) {
-        tiles[y].resize(width);
-        for (int x = 0; x < width; x++) {
-            tiles[y][x] = Tile(x, y, TileType::GRASS);
-        }
-    }
+    tiles.resize(width, std::vector<Tile>(height));
+    //for (int y = 0; y < height; y++) {
+    //    tiles[y].resize(width);
+    //    for (int x = 0; x < width; x++) {
+    //        tiles[y][x] = Tile(x, y, TileType::GRASS);
+    //    }
+    //}
     
     GenerateTerrain();
-    PlaceStartingResources();
+    //PlaceStartingResources();
+
+    fogOfWar = std::make_unique<FogOfWar>(width, height, 8);
 
     // Build NavMesh
     navMesh = std::make_unique<NavMesh>(this);
@@ -96,9 +98,9 @@ void Map::Render(Renderer* renderer, int playerId) {
     // Render visible tiles only
     for (int y = startTileY; y < endTileY; y++) {
         for (int x = startTileX; x < endTileX; x++) {
-            if (!IsVisible(x, y, playerId) && !IsExplored(x, y, playerId)) {
-                continue; // Don't render unexplored areas
-            }
+            //if (!IsVisible(x, y, playerId) && !IsExplored(x, y, playerId)) {
+            //    continue; // Don't render unexplored areas
+            //}
             
             // Draw tile in world coordinates (camera handles view/proj)
             Vector2 worldPos(x * 32.0f, y * 32.0f);
@@ -116,8 +118,8 @@ void Map::Render(Renderer* renderer, int playerId) {
                         uvX = GRASS_TEX_UV_X; uvY = GRASS_TEX_UV_Y; break;
                     case TileType::DIRT:  
                         uvX = DIRT_TEX_UV_X; uvY = DIRT_TEX_UV_Y; break;
-                    case TileType::STONE: 
-                        uvX = STONE_TEX_UV_X; uvY = STONE_TEX_UV_Y; break;
+                    //case TileType::STONE: 
+                    //    uvX = STONE_TEX_UV_X; uvY = STONE_TEX_UV_Y; break;
                     case TileType::WATER: 
                         uvX = WATER_TEX_UV_X; uvY = WATER_TEX_UV_Y; break;
                 }
@@ -131,7 +133,7 @@ void Map::Render(Renderer* renderer, int playerId) {
                     switch (tile->GetType()) {
                         case TileType::GRASS: tileColor = glm::vec3(0.2f, 0.5f, 0.1f); break;
                         case TileType::DIRT:  tileColor = glm::vec3(0.5f, 0.35f, 0.15f); break;
-                        case TileType::STONE: tileColor = glm::vec3(0.4f, 0.4f, 0.4f); break;
+                        //case TileType::STONE: tileColor = glm::vec3(0.4f, 0.4f, 0.4f); break;
                         case TileType::WATER: tileColor = glm::vec3(0.1f, 0.3f, 0.6f); break;
                     }
                 }
@@ -148,10 +150,10 @@ void Map::Render(Renderer* renderer, int playerId) {
             }
             
             // Apply fog overlay
-            if (!IsVisible(x, y, playerId)) {
-                renderer->DrawRect(Rect((int)worldPos.x, (int)worldPos.y, 32, 32), 
-                                 glm::vec3(0.0f, 0.0f, 0.0f));
-            }
+            //if (!IsVisible(x, y, playerId)) {
+            //    renderer->DrawRect(Rect((int)worldPos.x, (int)worldPos.y, 32, 32), 
+            //                     glm::vec3(0.0f, 0.0f, 0.0f));
+            //}
         }
     }
     
@@ -165,12 +167,12 @@ void Map::Render(Renderer* renderer, int playerId) {
     }
     
     // Render obstacles
-    for (auto& obstacle : obstacles) {
-        Point2D gridPos = obstacle->GetGridPosition();
-        if (IsVisible(gridPos.x, gridPos.y, playerId)) {
-            obstacle->Render(renderer);
-        }
-    }
+    //for (auto& obstacle : obstacles) {
+    //    Point2D gridPos = obstacle->GetGridPosition();
+    //    if (IsVisible(gridPos.x, gridPos.y, playerId)) {
+    //        obstacle->Render(renderer);
+    //    }
+    //}
     
     // Draw map border (red outline) using lines around the perimeter
     Vector2 topLeft(0, 0);
@@ -544,28 +546,17 @@ std::vector<Point2D> Map::GetOccupiedTiles(int ownerId) const {
 }
 
 void Map::GenerateTerrain() {
-    // Simple terrain generation
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, 100);
+    // Use MapGenerator for procedural generation
+    // The number of players and seed would come from game settings
+    // For now, use defaults
+    MapGenerator generator; // Random seed
     
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            int roll = dis(gen);
-            
-            //if (roll == 0) {
-            //    tiles[y][x] = Tile(x, y, TileType::WATER);
-            //} else if (roll == 0) {
-            //    tiles[y][x] = Tile(x, y, TileType::STONE);
-            //} else if (roll == 0) {
-            //    tiles[y][x] = Tile(x, y, TileType::DIRT);
-            //} else {
-            //    tiles[y][x] = Tile(x, y, TileType::GRASS);
-            //}
-            tiles[y][x] = Tile(x, y, TileType::GRASS);
-
-        }
-    }
+    // This will be called from Game::StartNewGame which knows numPlayers
+    // For standalone initialization, generate for 2 players
+    auto zones = generator.Generate(this, 2, size);
+    
+    // Store starting zones for later use by Game
+    // (You may want to add a member variable for this)
 }
 
 void Map::PlaceStartingResources() {

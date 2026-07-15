@@ -1,11 +1,12 @@
 #include "Game.h"
+#include "../Systems/MovementSystem.h"
+#include "../Map/MapGenerator.h"
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <iostream>
 #include <thread>
 #include <mutex>
-#include "../Systems/MovementSystem.h"
 
 Game::Game() 
     : window(nullptr)
@@ -138,11 +139,17 @@ void Game::SetupMenuCallbacks() {
 }
 
 void Game::StartNewGame(MapSize size) {
-    // Initialize game systems
+    // Create map
     map = std::make_unique<Map>(size);
-    map->Initialize();
 
     
+    // Generate seed from current time or use fixed seed for debugging
+    uint32_t seed = static_cast<uint32_t>(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    
+    // Initialize map with terrain generation
+    map->Initialize(); // Sets up the grid
+
     resourceManager = std::make_unique<ResourceManager>();
     techTree = std::make_unique<TechTree>();
     selectionSystem = std::make_unique<SelectionSystem>();
@@ -165,7 +172,7 @@ void Game::StartNewGame(MapSize size) {
     players.push_back({
         1, "AI", glm::vec3(0.0f, 0.0f, 1.0f), false, true, 0
     });
-    
+
     // Initialize resources for all players
     for (const auto& player : players) {
         resourceManager->InitializePlayer(player.id);
@@ -181,10 +188,13 @@ void Game::StartNewGame(MapSize size) {
             );
         }
     }
-    
-    // Place starting units and buildings
-    PlaceStartingUnits();
 
+    int numPlayers = static_cast<int>(players.size());
+
+    // Generate terrain with players
+    MapGenerator generator(seed);
+    auto startingZones = generator.Generate(map.get(), numPlayers, size);
+    
     // Initialize movement system for units
     movementSystem = std::make_unique<MovementSystem>(map.get());
     
@@ -195,18 +205,27 @@ void Game::StartNewGame(MapSize size) {
             movementSystem->RegisterUnit(unit);
         }
     }
-    
-    // Initialize fog of war and camera position before first render
+
     if (map) {
         map->UpdateFogOfWar(humanPlayerId);
     }
-    
+
     // Set camera to player's starting position
     if (renderer && renderer->GetCamera()) {
         Camera* camera = renderer->GetCamera();
+        float x = 50.0f, y = 50.0f;
+        for(int i=0;i<numPlayers;++i)
+        {
+            //search for player
+            if(startingZones[i].playerId == 0){
+                x = startingZones[i].center.x;
+                y = startingZones[i].center.y;
+            }
+        }
+
         camera->SetPosition(Vector2(
-            50.0f * 32.0f, 
-            50.0f * 32.0f
+            x * 32.0f, 
+            y * 32.0f
         ));
         
         // Set camera bounds to the map dimensions in world units
@@ -215,12 +234,6 @@ void Game::StartNewGame(MapSize size) {
         camera->SetBounds(mapBounds);
     }
     
-    // Reset input state to prevent stale button presses from menu interaction
-    if (inputHandler) {
-        inputHandler->ResetState();
-    }
-    
-    // Change to playing state
     ChangeState(GameState::PLAYING);
 }
 

@@ -65,6 +65,7 @@ file(GLOB_RECURSE SOURCES
     src/Map/Map.cpp
     src/Map/Pathfinding.cpp
     src/Map/Tile.cpp
+    src/Map/MapGenerator.cpp
     src/Navigation/NavMesh.cpp
     src/Navigation/SteeringSystem.cpp
     src/Serialization/SaveSystem.cpp
@@ -103,6 +104,7 @@ file(GLOB_RECURSE HEADERS
     src/Map/Map.h
     src/Map/Pathfinding.h
     src/Map/Tile.h
+    src/Map/MapGenerator.h
     src/Navigation/NavMesh.h
     src/Navigation/SteeringSystem.h
     src/Serialization/SaveSystem.h
