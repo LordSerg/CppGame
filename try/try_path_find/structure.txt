@@ -1,0 +1,70 @@
+walking_sim/
+├── CMakeLists.txt
+├── README.md
+├── src/
+│   ├── main.cpp
+│   ├── core/
+│   │   ├── Application.h
+│   │   ├── Application.cpp
+│   │   ├── Config.h
+│   │   └── Config.cpp
+│   ├── simulation/
+│   │   ├── World.h
+│   │   ├── World.cpp
+│   │   ├── Agent.h
+│   │   ├── Agent.cpp
+│   │   ├── Barrier.h
+│   │   └── Barrier.cpp
+│   ├── pathfinding/
+│   │   ├── IPathfinder.h
+│   │   ├── AStarPathfinder.h
+│   │   ├── AStarPathfinder.cpp
+│   │   ├── DijkstraPathfinder.h
+│   │   ├── DijkstraPathfinder.cpp
+│   │   ├── ThetaStarPathfinder.h
+│   │   ├── ThetaStarPathfinder.cpp
+│   │   ├── FlowFieldPathfinder.h
+│   │   ├── FlowFieldPathfinder.cpp
+│   │   ├── NavMesh.h
+│   │   ├── NavMesh.cpp
+│   │   ├── Grid.h
+│   │   └── Grid.cpp
+│   ├── steering/
+│   │   ├── ISteeringBehavior.h
+│   │   ├── SeekBehavior.h
+│   │   ├── SeekBehavior.cpp
+│   │   ├── SeparationBehavior.h
+│   │   ├── SeparationBehavior.cpp
+│   │   ├── CollisionAvoidance.h
+│   │   ├── CollisionAvoidance.cpp
+│   │   ├── ORCABehavior.h
+│   │   ├── ORCABehavior.cpp
+│   │   ├── FlockingBehavior.h
+│   │   └── FlockingBehavior.cpp
+│   ├── formation/
+│   │   ├── IFormation.h
+│   │   ├── SquareFormation.h
+│   │   ├── SquareFormation.cpp
+│   │   ├── CircleFormation.h
+│   │   ├── CircleFormation.cpp
+│   │   ├── LineFormation.h
+│   │   ├── LineFormation.cpp
+│   │   ├── WedgeFormation.h
+│   │   └── WedgeFormation.cpp
+│   ├── spatial/
+│   │   ├── SpatialHash.h
+│   │   └── SpatialHash.cpp
+│   ├── input/
+│   │   ├── InputManager.h
+│   │   └── InputManager.cpp
+│   ├── camera/
+│   │   ├── Camera.h
+│   │   └── Camera.cpp
+│   └── rendering/
+│       ├── Renderer.h
+│       └── Renderer.cpp
+├── external/
+│   ├── CMakeLists.txt
+│   └── (fetched by CMake)
+└── assets/
+    └── (empty for now)
