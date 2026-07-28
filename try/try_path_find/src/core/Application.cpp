@@ -275,37 +275,31 @@ void Application::renderUI() {
                  ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                  ImGuiWindowFlags_NoCollapse);
 
+    // Helper lambda to safely handle strings in ImGui Combo
+    auto DrawCombo = [](const char* label, int& current, const auto& items) -> bool {
+        std::vector<std::string> strings;
+        std::vector<const char*> cstrs;
+        for (const auto& item : items) strings.push_back(item->name());
+        for (const auto& s : strings) cstrs.push_back(s.c_str());
+        return ImGui::Combo(label, &current, cstrs.data(), (int)cstrs.size());
+    };
+
     // --- Pathfinding ---
     ImGui::SeparatorText("Pathfinding Algorithm");
-    {
-        std::vector<const char*> names;
-        for (auto& pf : pathfinders_) names.push_back(pf->name().c_str());
-        if (ImGui::Combo("##pathfinder", &currentPathfinder_,
-                          names.data(), (int)names.size())) {
-            world_.setPathfinder(pathfinders_[currentPathfinder_]);
-        }
+    if (DrawCombo("##pathfinder", currentPathfinder_, pathfinders_)) {
+        world_.setPathfinder(pathfinders_[currentPathfinder_]);
     }
 
     // --- Steering ---
     ImGui::SeparatorText("Agent Interaction");
-    {
-        std::vector<const char*> names;
-        for (auto& s : steerings_) names.push_back(s->name().c_str());
-        if (ImGui::Combo("##steering", &currentSteering_,
-                          names.data(), (int)names.size())) {
-            world_.setSteeringBehavior(steerings_[currentSteering_]);
-        }
+    if (DrawCombo("##steering", currentSteering_, steerings_)) {
+        world_.setSteeringBehavior(steerings_[currentSteering_]);
     }
 
     // --- Formation ---
     ImGui::SeparatorText("Agent Formation");
-    {
-        std::vector<const char*> names;
-        for (auto& f : formations_) names.push_back(f->name().c_str());
-        if (ImGui::Combo("##formation", &currentFormation_,
-                          names.data(), (int)names.size())) {
-            world_.setFormation(formations_[currentFormation_]);
-        }
+    if (DrawCombo("##formation", currentFormation_, formations_)) {
+        world_.setFormation(formations_[currentFormation_]);
     }
 
     // --- Map Tool ---
