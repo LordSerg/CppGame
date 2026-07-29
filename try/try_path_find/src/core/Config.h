@@ -2,12 +2,12 @@
 
 namespace Config {
     // Map dimensions (change these to resize the world)
-    constexpr float MAP_WIDTH = 500.0f;
-    constexpr float MAP_HEIGHT = 500.0f;
+    constexpr float MAP_WIDTH = 1000.0f;
+    constexpr float MAP_HEIGHT = 1000.0f;
 
     // Grid resolution (for grid-based pathfinding)
-    constexpr int GRID_COLS = 100;
-    constexpr int GRID_ROWS = 100;
+    constexpr int GRID_COLS = 200;
+    constexpr int GRID_ROWS = 200;
     constexpr float CELL_WIDTH = MAP_WIDTH / GRID_COLS;
     constexpr float CELL_HEIGHT = MAP_HEIGHT / GRID_ROWS;
 

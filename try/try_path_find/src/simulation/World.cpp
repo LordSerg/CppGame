@@ -141,19 +141,27 @@ void World::rebuildSpatialHash() {
 }
 
 void World::resolveAgentCollisions() {
-    // Simple push-apart
-    for (size_t i = 0; i < agents_.size(); ++i) {
-        auto neighbors = spatialHash_.query(agents_[i].position,
-                                             agents_[i].radius * 4.0f);
-        for (int j : neighbors) {
-            if (j <= (int)i) continue;
-            Vec2 diff = agents_[i].position - agents_[j].position;
-            float dist = diff.length();
-            float minDist = agents_[i].radius + agents_[j].radius;
-            if (dist < minDist && dist > 1e-6f) {
-                Vec2 push = diff.normalized() * ((minDist - dist) * 0.5f);
-                agents_[i].position += push;
-                agents_[j].position -= push;
+    // Iterative position correction for physics-like stability
+    const int iterations = 3;
+    for (int iter = 0; iter < iterations; ++iter) {
+        for (size_t i = 0; i < agents_.size(); ++i) {
+            auto neighbors = spatialHash_.query(agents_[i].position, agents_[i].radius * 2.5f);
+            for (int j : neighbors) {
+                if (j <= (int)i) continue; // avoid double resolving
+
+                Vec2 diff = agents_[i].position - agents_[j].position;
+                float distSq = diff.lengthSq();
+                float minSep = agents_[i].radius + agents_[j].radius;
+
+                if (distSq < minSep * minSep && distSq > 1e-8f) {
+                    float dist = std::sqrt(distSq);
+                    Vec2 push = diff * (1.0f / dist); // normalize
+                    float penetration = minSep - dist;
+                    
+                    // Push both agents apart equally
+                    agents_[i].position += push * (penetration * 0.5f);
+                    agents_[j].position -= push * (penetration * 0.5f);
+                }
             }
         }
     }
