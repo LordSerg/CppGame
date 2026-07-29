@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <cmath>
 
-World::World() : spatialHash_(Config::SPATIAL_HASH_CELL) {}
+World::World() : spatialHash_(Config::SPATIAL_HASH_CELL) {
+    neighborBuffer_.reserve(64);
+}
 
 World::~World() = default;
 
@@ -60,28 +62,45 @@ void World::commandSelectedTo(Vec2 target) {
     if (selected.empty()) return;
 
     // Compute formation offsets
+    std::vector<Vec2> offsets;
     if (formation_) {
-        auto offsets = formation_->computeOffsets(static_cast<int>(selected.size()));
-        for (size_t i = 0; i < selected.size(); ++i) {
-            selected[i]->formationOffset = (i < offsets.size()) ? offsets[i] : Vec2(0, 0);
-        }
-    } else {
-        for (auto* a : selected) a->formationOffset = Vec2(0, 0);
+        offsets = formation_->computeOffsets(static_cast<int>(selected.size()));
     }
 
-    // Compute paths for each agent
-    for (auto* agent : selected) {
-        Vec2 agentTarget = target + agent->formationOffset;
-        agent->goal = agentTarget;
-        agent->hasGoal = true;
-        agent->currentWaypoint = 0;
+    // Queue path requests instead of computing all at once
+    for (size_t i = 0; i < selected.size(); ++i) {
+        Vec2 offset = (i < offsets.size()) ? offsets[i] : Vec2(0, 0);
+        selected[i]->formationOffset = offset;
+        Vec2 agentTarget = target + offset;
+        selected[i]->goal = agentTarget;
+        selected[i]->hasGoal = true;
+        selected[i]->currentWaypoint = 0;
+        selected[i]->path.clear(); // clear old path, will be filled by queue
+
+        pathQueue_.push({selected[i]->id, agentTarget});
+    }
+}
+
+void World::processPathQueue() {
+    int processed = 0;
+    while (!pathQueue_.empty() && processed < Config::MAX_PATHS_PER_FRAME) {
+        auto req = pathQueue_.front();
+        pathQueue_.pop();
+
+        // Find agent by id
+        Agent* agent = nullptr;
+        for (auto& a : agents_) {
+            if (a.id == req.agentId) { agent = &a; break; }
+        }
+        if (!agent || !agent->hasGoal) continue;
 
         if (pathfinder_) {
-            agent->path = pathfinder_->findPath(agent->position, agentTarget, *this);
+            agent->path = pathfinder_->findPath(agent->position, req.target, *this);
         } else {
-            // Direct path
-            agent->path = {agentTarget};
+            agent->path = {req.target};
         }
+        agent->currentWaypoint = 0;
+        processed++;
     }
 }
 
@@ -107,47 +126,49 @@ bool World::collidesWithBarrier(Vec2 pos, float radius) const {
 }
 
 bool World::lineIntersectsBarrier(Vec2 a, Vec2 b) const {
-    // Simple segment vs AABB intersection for each barrier
     for (const auto& bar : barriers_) {
         Vec2 bmin = bar.center - bar.halfExtents;
         Vec2 bmax = bar.center + bar.halfExtents;
 
-        // Liang-Barsky algorithm
         float dx = b.x - a.x;
         float dy = b.y - a.y;
         float p[4] = {-dx, dx, -dy, dy};
         float q[4] = {a.x - bmin.x, bmax.x - a.x, a.y - bmin.y, bmax.y - a.y};
         float tmin = 0.0f, tmax = 1.0f;
 
+        bool outside = false;
         for (int i = 0; i < 4; ++i) {
             if (std::abs(p[i]) < 1e-10f) {
-                if (q[i] < 0) { tmin = 2.0f; break; }
+                if (q[i] < 0) { outside = true; break; }
             } else {
                 float t = q[i] / p[i];
                 if (p[i] < 0) { if (t > tmin) tmin = t; }
                 else { if (t < tmax) tmax = t; }
             }
         }
-        if (tmin <= tmax) return true;
+        if (!outside && tmin <= tmax) return true;
     }
     return false;
 }
 
 void World::rebuildSpatialHash() {
     spatialHash_.clear();
+    spatialHash_.reserve((int)agents_.size());
     for (size_t i = 0; i < agents_.size(); ++i) {
         spatialHash_.insert(static_cast<int>(i), agents_[i].position);
     }
 }
 
 void World::resolveAgentCollisions() {
-    // Iterative position correction for physics-like stability
     const int iterations = 3;
     for (int iter = 0; iter < iterations; ++iter) {
+        // Rebuild hash each iteration since positions shifted
+        if (iter > 0) rebuildSpatialHash();
+
         for (size_t i = 0; i < agents_.size(); ++i) {
-            auto neighbors = spatialHash_.query(agents_[i].position, agents_[i].radius * 2.5f);
-            for (int j : neighbors) {
-                if (j <= (int)i) continue; // avoid double resolving
+            spatialHash_.query(agents_[i].position, agents_[i].radius * 2.5f, neighborBuffer_);
+            for (int j : neighborBuffer_) {
+                if (j <= (int)i) continue;
 
                 Vec2 diff = agents_[i].position - agents_[j].position;
                 float distSq = diff.lengthSq();
@@ -155,10 +176,9 @@ void World::resolveAgentCollisions() {
 
                 if (distSq < minSep * minSep && distSq > 1e-8f) {
                     float dist = std::sqrt(distSq);
-                    Vec2 push = diff * (1.0f / dist); // normalize
+                    Vec2 push = diff * (1.0f / dist);
                     float penetration = minSep - dist;
-                    
-                    // Push both agents apart equally
+
                     agents_[i].position += push * (penetration * 0.5f);
                     agents_[j].position -= push * (penetration * 0.5f);
                 }
@@ -168,6 +188,9 @@ void World::resolveAgentCollisions() {
 }
 
 void World::update(float dt) {
+    // Process deferred path requests
+    processPathQueue();
+
     rebuildSpatialHash();
 
     // Move agents along their paths
@@ -177,7 +200,6 @@ void World::update(float dt) {
             continue;
         }
 
-        // Get current target waypoint
         if (agent.currentWaypoint >= (int)agent.path.size()) {
             agent.hasGoal = false;
             agent.velocity = Vec2(0, 0);
@@ -200,10 +222,8 @@ void World::update(float dt) {
             dist = toTarget.length();
         }
 
-        // Seek toward waypoint
         Vec2 desired = toTarget.normalized() * agent.maxSpeed;
 
-        // Arrival slowdown for last waypoint
         if (agent.currentWaypoint == (int)agent.path.size() - 1 &&
             dist < Config::ARRIVAL_SLOW_RADIUS) {
             desired = desired * (dist / Config::ARRIVAL_SLOW_RADIUS);
@@ -212,26 +232,23 @@ void World::update(float dt) {
         agent.velocity = desired;
     }
 
-    // Apply steering behaviors (separation, collision avoidance, etc.)
+    // Apply steering behaviors
     if (steering_) {
         steering_->apply(agents_, *this, dt);
     }
 
     // Integrate positions
     for (auto& agent : agents_) {
-        // Clamp velocity
         if (agent.velocity.lengthSq() > agent.maxSpeed * agent.maxSpeed) {
             agent.velocity = agent.velocity.normalized() * agent.maxSpeed;
         }
 
         agent.position += agent.velocity * dt;
 
-        // Update facing direction
         if (agent.velocity.lengthSq() > 1e-4f) {
             agent.direction = agent.velocity.normalized();
         }
 
-        // Clamp to map bounds
         agent.position.x = std::max(agent.radius,
                            std::min(agent.position.x, Config::MAP_WIDTH - agent.radius));
         agent.position.y = std::max(agent.radius,
@@ -247,7 +264,6 @@ void World::update(float dt) {
             if (dist < agent.radius && dist > 1e-6f) {
                 agent.position += diff.normalized() * (agent.radius - dist);
             } else if (dist < 1e-6f && b.contains(agent.position)) {
-                // Agent center is inside barrier, push out to nearest edge
                 float dx1 = agent.position.x - (b.center.x - b.halfExtents.x);
                 float dx2 = (b.center.x + b.halfExtents.x) - agent.position.x;
                 float dy1 = agent.position.y - (b.center.y - b.halfExtents.y);

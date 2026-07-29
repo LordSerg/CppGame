@@ -275,7 +275,6 @@ void Application::renderUI() {
                  ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                  ImGuiWindowFlags_NoCollapse);
 
-    // Helper lambda to safely handle strings in ImGui Combo
     auto DrawCombo = [](const char* label, int& current, const auto& items) -> bool {
         std::vector<std::string> strings;
         std::vector<const char*> cstrs;
@@ -319,20 +318,21 @@ void Application::renderUI() {
     ImGui::Text("Agents: %d", (int)world_.getAgents().size());
     ImGui::Text("Barriers: %d", (int)world_.getBarriers().size());
     ImGui::Text("Selected: %d", (int)world_.getSelectedAgents().size());
+    int pending = world_.pendingPathRequests();
+    if (pending > 0) {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                           "Paths queued: %d", pending);
+    }
     ImGui::Text("%s", paused_ ? "PAUSED (Space)" : "Running (Space to pause)");
 
     // --- Actions ---
     ImGui::SeparatorText("Actions");
-    if (ImGui::Button("Clear All Agents")) {
-        world_.getAgents().clear();
-    }
+    if (ImGui::Button("Clear All Agents")) world_.getAgents().clear();
     if (ImGui::Button("Clear All Barriers")) {
         world_.getBarriers().clear();
         notifyWorldChanged();
     }
-    if (ImGui::Button("Clear Selection")) {
-        world_.clearSelection();
-    }
+    if (ImGui::Button("Clear Selection")) world_.clearSelection();
     if (ImGui::Button("Delete Selected (Del)")) {
         auto selected = world_.getSelectedAgents();
         for (auto* a : selected) world_.removeAgent(a->id);
@@ -350,10 +350,7 @@ void Application::renderUI() {
     );
 
     ImGui::End();
-
     ImGui::Render();
-
-    // Render ImGui over full window
     glViewport(0, 0, winW, winH);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }

@@ -6,24 +6,26 @@
 void CollisionAvoidance::apply(std::vector<Agent>& agents, const World& world, float dt) {
     auto& hash = const_cast<World&>(world).getSpatialHash();
     float maxRange = 60.0f;
+    std::vector<int> neighbors;
+    neighbors.reserve(32);
 
-    for (auto& agent : agents) {
+    for (size_t i = 0; i < agents.size(); ++i) {
+        auto& agent = agents[i];
         Vec2 avoidForce(0, 0);
-        auto neighbors = hash.query(agent.position, maxRange);
+        hash.query(agent.position, maxRange, neighbors);
 
         float closestTime = lookAheadTime;
         Vec2 closestAvoid(0, 0);
 
         for (int ni : neighbors) {
+            if (ni == (int)i) continue;
             auto& other = agents[ni];
-            if (other.id == agent.id) continue;
 
             Vec2 relPos = other.position - agent.position;
             Vec2 relVel = agent.velocity - other.velocity;
             float relSpeed = relVel.length();
             if (relSpeed < 1e-6f) continue;
 
-            // Time of closest approach
             float t = relPos.dot(relVel) / (relSpeed * relSpeed);
             t = std::max(0.0f, std::min(t, lookAheadTime));
 

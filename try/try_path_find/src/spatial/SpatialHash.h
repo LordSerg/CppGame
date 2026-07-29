@@ -1,32 +1,47 @@
 #pragma once
 
 #include "simulation/Agent.h"
-#include <unordered_map>
-#include <cstddef>
 #include <vector>
+#include <cmath>
+#include <functional>
 
 class SpatialHash {
 public:
     SpatialHash(float cellSize);
 
     void clear();
+    void reserve(int expectedAgents);
     void insert(int agentIndex, Vec2 position);
-    std::vector<int> query(Vec2 position, float radius) const;
+
+    // Zero-allocation query: calls callback for each found index
+    void query(Vec2 position, float radius,
+               const std::function<void(int)>& callback) const;
+
+    // Convenience: fills a caller-provided vector (reuse it to avoid alloc)
+    void query(Vec2 position, float radius, std::vector<int>& out) const;
 
 private:
-    struct CellKey {
-        int x, y;
-        bool operator==(const CellKey& o) const { return x == o.x && y == o.y; }
+    // Open-addressing hash table for minimal overhead
+    static constexpr int TABLE_SIZE = 4096; // power of 2
+    static constexpr int BUCKET_CAP = 16;
+
+    struct Bucket {
+        int cellX, cellY;
+        int count;
+        int indices[BUCKET_CAP];
+        bool occupied;
     };
 
-    struct CellKeyHash {
-        size_t operator()(const CellKey& k) const {
-            return std::hash<int>()(k.x) ^ (std::hash<int>()(k.y) << 16);
-        }
-    };
-
-    CellKey toCell(Vec2 pos) const;
+    int hashCell(int cx, int cy) const;
 
     float cellSize_;
-    std::unordered_map<CellKey, std::vector<int>, CellKeyHash> cells_;
+    float invCellSize_;
+    Bucket table_[TABLE_SIZE];
+
+    // Overflow storage for buckets that exceed BUCKET_CAP
+    struct OverflowBucket {
+        int cellX, cellY;
+        std::vector<int> indices;
+    };
+    mutable std::vector<OverflowBucket> overflow_;
 };

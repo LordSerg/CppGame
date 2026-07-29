@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <queue>
 
 class IPathfinder;
 class ISteeringBehavior;
@@ -60,9 +61,13 @@ public:
     // Check if a line segment from a to b intersects any barrier
     bool lineIntersectsBarrier(Vec2 a, Vec2 b) const;
 
+    // Pending path requests count
+    int pendingPathRequests() const { return (int)pathQueue_.size(); }
+
 private:
     void rebuildSpatialHash();
     void resolveAgentCollisions();
+    void processPathQueue();
 
     std::vector<Agent> agents_;
     std::vector<Barrier> barriers_;
@@ -74,4 +79,14 @@ private:
     std::shared_ptr<IFormation> formation_;
 
     SpatialHash spatialHash_;
+
+    // Deferred pathfinding queue
+    struct PathRequest {
+        uint32_t agentId;
+        Vec2 target;
+    };
+    std::queue<PathRequest> pathQueue_;
+
+    // Reusable buffer for neighbor queries
+    std::vector<int> neighborBuffer_;
 };

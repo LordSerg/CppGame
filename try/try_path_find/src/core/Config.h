@@ -33,4 +33,7 @@ namespace Config {
     // Agent path following
     constexpr float WAYPOINT_REACH_DIST = 5.0f;
     constexpr float ARRIVAL_SLOW_RADIUS = 20.0f;
+
+    // Pathfinding budget: max A* searches per frame
+    constexpr int MAX_PATHS_PER_FRAME = 8;
 }
