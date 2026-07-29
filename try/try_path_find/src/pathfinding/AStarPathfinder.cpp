@@ -2,17 +2,29 @@
 #include "simulation/World.h"
 #include <algorithm>
 #include <cmath>
-#include <queue>
 
 AStarPathfinder::AStarPathfinder() {
     int total = Config::GRID_COLS * Config::GRID_ROWS;
     nodeData_.resize(total);
-    inOpen_.resize(total, false);
+    // Initialize all nodes to "untouched" state
+    for (int i = 0; i < total; ++i) {
+        nodeData_[i].g = 1e18f;
+        nodeData_[i].parent = -1;
+        nodeData_[i].closed = false;
+    }
     touchedNodes_.reserve(4096);
+    openHeap_.reserve(4096);
 }
 
 void AStarPathfinder::onWorldChanged(const World& world) {
     gridDirty_ = true;
+}
+
+void AStarPathfinder::touchNode(int k) {
+    // Only add to touched list if this node hasn't been touched yet this search
+    if (nodeData_[k].g >= 1e17f && !nodeData_[k].closed) {
+        touchedNodes_.push_back(k);
+    }
 }
 
 std::vector<Vec2> AStarPathfinder::findPath(Vec2 start, Vec2 end, const World& world) {
@@ -32,33 +44,27 @@ std::vector<Vec2> AStarPathfinder::findPath(Vec2 start, Vec2 end, const World& w
 
     if (startKey == endKey) return {end};
 
-    // Reset only previously touched nodes
+    // Reset only previously touched nodes from last search
     for (int k : touchedNodes_) {
         nodeData_[k].g = 1e18f;
         nodeData_[k].parent = -1;
         nodeData_[k].closed = false;
-        inOpen_[k] = false;
     }
     touchedNodes_.clear();
     openHeap_.clear();
 
-    auto touch = [this](int k) {
-        if (nodeData_[k].g >= 1e17f) { // untouched
-            touchedNodes_.push_back(k);
-        }
-    };
-
-    // Heuristic (Octile distance - tighter than Euclidean for 8-directional)
+    // Octile distance heuristic (tight for 8-directional movement)
     auto heuristic = [](int c1, int r1, int c2, int r2) -> float {
         int dx = std::abs(c1 - c2);
         int dy = std::abs(r1 - r2);
         return (float)(std::max(dx, dy)) + 0.414f * (float)(std::min(dx, dy));
     };
 
-    touch(startKey);
+    // Initialize start node
+    touchedNodes_.push_back(startKey);
     nodeData_[startKey].g = 0.0f;
     nodeData_[startKey].parent = -1;
-    inOpen_[startKey] = true;
+    nodeData_[startKey].closed = false;
     openHeap_.push_back({startKey, heuristic(sc, sr, ec, er)});
 
     static const int dx[] = {1, -1, 0, 0, 1, -1, 1, -1};
@@ -74,10 +80,12 @@ std::vector<Vec2> AStarPathfinder::findPath(Vec2 start, Vec2 end, const World& w
         openHeap_.pop_back();
 
         int curKey = cur.node;
-        if (curKey == endKey) { found = true; break; }
+
+        // Skip if already processed (stale entry in heap)
         if (nodeData_[curKey].closed) continue;
         nodeData_[curKey].closed = true;
-        inOpen_[curKey] = false;
+
+        if (curKey == endKey) { found = true; break; }
 
         int cc = curKey % Config::GRID_COLS;
         int cr = curKey / Config::GRID_COLS;
@@ -89,6 +97,8 @@ std::vector<Vec2> AStarPathfinder::findPath(Vec2 start, Vec2 end, const World& w
 
             if (nc < 0 || nc >= Config::GRID_COLS || nr < 0 || nr >= Config::GRID_ROWS)
                 continue;
+
+            // *** Check if neighbor cell is blocked by a barrier ***
             if (grid_.isBlocked(nc, nr)) continue;
 
             // Corner cutting check for diagonals
@@ -98,25 +108,30 @@ std::vector<Vec2> AStarPathfinder::findPath(Vec2 start, Vec2 end, const World& w
             }
 
             int nk = nr * Config::GRID_COLS + nc;
-            touch(nk);
 
+            // Skip already-closed nodes
             if (nodeData_[nk].closed) continue;
 
             float ng = curG + dcost[i];
+
+            // If this node hasn't been touched yet, add it to touched list
+            if (nodeData_[nk].g >= 1e17f) {
+                touchedNodes_.push_back(nk);
+            }
+
             if (ng < nodeData_[nk].g) {
                 nodeData_[nk].g = ng;
                 nodeData_[nk].parent = curKey;
                 float f = ng + heuristic(nc, nr, ec, er);
                 openHeap_.push_back({nk, f});
                 std::push_heap(openHeap_.begin(), openHeap_.end(), std::greater<HeapEntry>());
-                inOpen_[nk] = true;
             }
         }
     }
 
     if (!found) return {end};
 
-    // Reconstruct
+    // Reconstruct path
     std::vector<Vec2> path;
     int ck = endKey;
     while (ck != startKey && ck != -1) {
@@ -132,7 +147,7 @@ std::vector<Vec2> AStarPathfinder::findPath(Vec2 start, Vec2 end, const World& w
     if (!path.empty()) path.back() = end;
     else path.push_back(end);
 
-    // Path smoothing: remove unnecessary waypoints with line-of-sight
+    // Path smoothing: remove unnecessary waypoints via line-of-sight
     if (path.size() > 2) {
         std::vector<Vec2> smoothed;
         smoothed.push_back(path[0]);

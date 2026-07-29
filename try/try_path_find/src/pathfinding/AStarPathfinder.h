@@ -15,23 +15,24 @@ private:
     Grid grid_;
     bool gridDirty_ = true;
 
-    // Pre-allocated work buffers (avoid per-search allocation)
+    // Pre-allocated work buffers
     struct NodeData {
-        float g;
-        int parent;
-        bool closed;
+        float g = 1e18f;
+        int parent = -1;
+        bool closed = false;
     };
-    std::vector<NodeData> nodeData_; // size = GRID_COLS * GRID_ROWS
+    std::vector<NodeData> nodeData_;
 
-    // Binary heap open set using indices
     struct HeapEntry {
         int node;
         float f;
         bool operator>(const HeapEntry& o) const { return f > o.f; }
     };
     std::vector<HeapEntry> openHeap_;
-    std::vector<bool> inOpen_;
 
     // Track which nodes were touched so we only reset those
     std::vector<int> touchedNodes_;
+
+    // Helper to mark a node as touched
+    void touchNode(int k);
 };
