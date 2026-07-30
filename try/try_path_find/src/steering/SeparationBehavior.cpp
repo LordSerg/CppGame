@@ -1,25 +1,34 @@
 #include "steering/SeparationBehavior.h"
 #include "simulation/Agent.h"
 #include "simulation/World.h"
+#include <vector>
 
 void SeparationBehavior::apply(std::vector<Agent>& agents, const World& world, float dt) {
     auto& hash = const_cast<World&>(world).getSpatialHash();
-    std::vector<int> neighbors; // reused buffer
-    neighbors.reserve(32);
+    int count = (int)agents.size();
 
-    for (size_t i = 0; i < agents.size(); ++i) {
-        auto& agent = agents[i];
-        Vec2 separationForce(0, 0);
+    // Compute forces into a separate buffer (parallel-safe)
+    std::vector<Vec2> forces(count, Vec2(0, 0));
 
-        hash.query(agent.position, separationRadius, neighbors);
+    const_cast<World&>(world).getThreadPool().parallelFor(count, [&](int i) {
+        std::vector<int> neighbors; // thread-local
+        neighbors.reserve(32);
+        hash.query(agents[i].position, separationRadius, neighbors);
+
+        Vec2 force(0, 0);
         for (int ni : neighbors) {
-            if (ni == (int)i) continue;
-            Vec2 diff = agent.position - agents[ni].position;
+            if (ni == i) continue;
+            Vec2 diff = agents[i].position - agents[ni].position;
             float dist = diff.length();
             if (dist < separationRadius && dist > 1e-6f) {
-                separationForce += diff.normalized() * (separationStrength / dist);
+                force += diff.normalized() * (separationStrength / dist);
             }
         }
-        agent.velocity += separationForce;
+        forces[i] = force;
+    });
+
+    // Apply forces (sequential, but trivial)
+    for (int i = 0; i < count; ++i) {
+        agents[i].velocity += forces[i];
     }
 }

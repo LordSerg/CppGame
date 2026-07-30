@@ -38,6 +38,7 @@ file(GLOB_RECURSE SOURCES
     src/camera/Camera.cpp
     src/core/Application.cpp
     src/core/Config.cpp
+    src/core/ThreadPool.cpp
     src/formation/CircleFormation.cpp
     src/formation/LineFormation.cpp
     src/formation/SquareFormation.cpp
@@ -65,6 +66,7 @@ file(GLOB_RECURSE HEADERS
     src/camera/Camera.h
     src/core/Application.h
     src/core/Config.h
+    src/core/ThreadPool.h
     src/formation/CircleFormation.h
     src/formation/IFormation.h
     src/formation/LineFormation.h
@@ -99,6 +101,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 find_package(glm REQUIRED)
+find_package(Threads REQUIRED)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
@@ -106,6 +109,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imgui
     glm::glm
     glad
+    Threads::Threads
 )
 
 # Platform-specific settings

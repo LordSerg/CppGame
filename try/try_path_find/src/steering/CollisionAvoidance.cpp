@@ -2,23 +2,26 @@
 #include "simulation/Agent.h"
 #include "simulation/World.h"
 #include <cmath>
+#include <vector>
 
 void CollisionAvoidance::apply(std::vector<Agent>& agents, const World& world, float dt) {
     auto& hash = const_cast<World&>(world).getSpatialHash();
     float maxRange = 60.0f;
-    std::vector<int> neighbors;
-    neighbors.reserve(32);
+    int count = (int)agents.size();
 
-    for (size_t i = 0; i < agents.size(); ++i) {
+    std::vector<Vec2> avoidForces(count, Vec2(0, 0));
+
+    const_cast<World&>(world).getThreadPool().parallelFor(count, [&](int i) {
         auto& agent = agents[i];
-        Vec2 avoidForce(0, 0);
+        std::vector<int> neighbors;
+        neighbors.reserve(32);
         hash.query(agent.position, maxRange, neighbors);
 
         float closestTime = lookAheadTime;
         Vec2 closestAvoid(0, 0);
 
         for (int ni : neighbors) {
-            if (ni == (int)i) continue;
+            if (ni == i) continue;
             auto& other = agents[ni];
 
             Vec2 relPos = other.position - agent.position;
@@ -43,7 +46,10 @@ void CollisionAvoidance::apply(std::vector<Agent>& agents, const World& world, f
                     closestAvoid = agent.direction.perpendicular() * avoidanceStrength;
             }
         }
+        avoidForces[i] = closestAvoid;
+    });
 
-        agent.velocity += closestAvoid;
+    for (int i = 0; i < count; ++i) {
+        agents[i].velocity += avoidForces[i];
     }
 }

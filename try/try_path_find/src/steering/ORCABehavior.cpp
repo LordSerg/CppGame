@@ -3,6 +3,7 @@
 #include "simulation/World.h"
 #include <cmath>
 #include <algorithm>
+#include <vector>
 
 const float RVO_EPSILON = 0.00001f;
 
@@ -13,7 +14,6 @@ static float det(const Vec2& v1, const Vec2& v2) {
 bool ORCABehavior::linearProgram1(const std::vector<Line>& lines, size_t lineNo, float radius, const Vec2& optVelocity, bool dirOpt, Vec2& result) {
     float dotProduct = lines[lineNo].point.dot(lines[lineNo].direction);
     float discriminant = dotProduct * dotProduct + radius * radius - lines[lineNo].point.lengthSq();
-
     if (discriminant < 0.0f) return false;
 
     float sqrtDiscriminant = std::sqrt(discriminant);
@@ -23,16 +23,13 @@ bool ORCABehavior::linearProgram1(const std::vector<Line>& lines, size_t lineNo,
     for (size_t i = 0; i < lineNo; ++i) {
         float denominator = det(lines[lineNo].direction, lines[i].direction);
         float numerator = det(lines[i].direction, lines[lineNo].point - lines[i].point);
-
         if (std::abs(denominator) <= RVO_EPSILON) {
             if (numerator < 0.0f) return false;
             continue;
         }
-
         float t = numerator / denominator;
         if (denominator >= 0.0f) tRight = std::min(tRight, t);
         else tLeft = std::max(tLeft, t);
-
         if (tLeft > tRight) return false;
     }
 
@@ -91,19 +88,20 @@ void ORCABehavior::linearProgram3(const std::vector<Line>& lines, size_t numObst
 
 void ORCABehavior::apply(std::vector<Agent>& agents, const World& world, float dt) {
     auto& hash = const_cast<World&>(world).getSpatialHash();
-    std::vector<Vec2> newVelocities(agents.size());
-    std::vector<int> neighbors;
-    neighbors.reserve(32);
+    int count = (int)agents.size();
+    std::vector<Vec2> newVelocities(count);
 
-    for (size_t i = 0; i < agents.size(); ++i) {
+    const_cast<World&>(world).getThreadPool().parallelFor(count, [&](int i) {
         Agent& agent = agents[i];
         std::vector<Line> orcaLines;
+        std::vector<int> neighbors;
+        neighbors.reserve(32);
         hash.query(agent.position, neighborDist, neighbors);
 
         float invTimeHorizon = 1.0f / timeHorizon;
 
         for (int ni : neighbors) {
-            if (ni == (int)i) continue;
+            if (ni == i) continue;
             Agent& other = agents[ni];
             Vec2 relPos = other.position - agent.position;
             Vec2 relVel = agent.velocity - other.velocity;
@@ -118,7 +116,6 @@ void ORCABehavior::apply(std::vector<Agent>& agents, const World& world, float d
                 Vec2 w = relVel - relPos * invTimeHorizon;
                 float wLengthSq = w.lengthSq();
                 float dotProduct1 = w.dot(relPos);
-
                 if (dotProduct1 < 0.0f && dotProduct1 * dotProduct1 > combinedRadiusSq * wLengthSq) {
                     float wLength = std::sqrt(wLengthSq);
                     Vec2 unitW = w * (1.0f / wLength);
@@ -154,9 +151,9 @@ void ORCABehavior::apply(std::vector<Agent>& agents, const World& world, float d
         if (lineFail < orcaLines.size()) {
             linearProgram3(orcaLines, 0, lineFail, agent.maxSpeed, newVelocities[i]);
         }
-    }
+    });
 
-    for (size_t i = 0; i < agents.size(); ++i) {
+    for (int i = 0; i < count; ++i) {
         agents[i].velocity = newVelocities[i];
     }
 }

@@ -35,5 +35,5 @@ namespace Config {
     constexpr float ARRIVAL_SLOW_RADIUS = 20.0f;
 
     // Pathfinding budget: max A* searches per frame
-    constexpr int MAX_PATHS_PER_FRAME = 8;
+    constexpr int MAX_PATHS_PER_FRAME = 16;
 }

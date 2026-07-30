@@ -5,6 +5,7 @@
 #include "core/Config.h"
 #include <algorithm>
 #include <cmath>
+#include <future>
 
 World::World() : spatialHash_(Config::SPATIAL_HASH_CELL) {
     neighborBuffer_.reserve(64);
@@ -61,13 +62,11 @@ void World::commandSelectedTo(Vec2 target) {
     auto selected = getSelectedAgents();
     if (selected.empty()) return;
 
-    // Compute formation offsets
     std::vector<Vec2> offsets;
     if (formation_) {
         offsets = formation_->computeOffsets(static_cast<int>(selected.size()));
     }
 
-    // Queue path requests instead of computing all at once
     for (size_t i = 0; i < selected.size(); ++i) {
         Vec2 offset = (i < offsets.size()) ? offsets[i] : Vec2(0, 0);
         selected[i]->formationOffset = offset;
@@ -75,46 +74,69 @@ void World::commandSelectedTo(Vec2 target) {
         selected[i]->goal = agentTarget;
         selected[i]->hasGoal = true;
         selected[i]->currentWaypoint = 0;
-        selected[i]->path.clear(); // clear old path, will be filled by queue
+        selected[i]->path.clear();
 
         pathQueue_.push({selected[i]->id, agentTarget});
     }
 }
 
 void World::processPathQueue() {
-    int processed = 0;
-    while (!pathQueue_.empty() && processed < Config::MAX_PATHS_PER_FRAME) {
-        auto req = pathQueue_.front();
+    if (pathQueue_.empty() || !pathfinder_) return;
+
+    // Collect a batch of requests
+    std::vector<PathRequest> batch;
+    int maxBatch = Config::MAX_PATHS_PER_FRAME;
+    while (!pathQueue_.empty() && (int)batch.size() < maxBatch) {
+        batch.push_back(pathQueue_.front());
         pathQueue_.pop();
+    }
 
-        // Find agent by id
-        Agent* agent = nullptr;
-        for (auto& a : agents_) {
-            if (a.id == req.agentId) { agent = &a; break; }
-        }
-        if (!agent || !agent->hasGoal) continue;
+    if (batch.empty()) return;
 
-        if (pathfinder_) {
-            agent->path = pathfinder_->findPath(agent->position, req.target, *this);
-        } else {
-            agent->path = {req.target};
+    // Map agent IDs to indices for fast lookup
+    struct BatchResult {
+        int agentIdx;
+        std::vector<Vec2> path;
+    };
+    std::vector<BatchResult> results(batch.size());
+
+    // Find agent indices
+    for (size_t b = 0; b < batch.size(); ++b) {
+        results[b].agentIdx = -1;
+        for (size_t a = 0; a < agents_.size(); ++a) {
+            if (agents_[a].id == batch[b].agentId) {
+                results[b].agentIdx = (int)a;
+                break;
+            }
         }
-        agent->currentWaypoint = 0;
-        processed++;
+    }
+
+    // Parallel pathfinding: each search uses thread-local storage
+    // The grid is read-only, the World (for lineIntersectsBarrier) is read-only,
+    // and each result writes to its own slot.
+    const World* worldPtr = this;
+    IPathfinder* pf = pathfinder_.get();
+
+    threadPool_.parallelFor((int)batch.size(), [&](int b) {
+        if (results[b].agentIdx < 0) return;
+        Agent& agent = agents_[results[b].agentIdx];
+        if (!agent.hasGoal) return;
+        results[b].path = pf->findPath(agent.position, batch[b].target, *worldPtr);
+    });
+
+    // Apply results (single-threaded, modifies agents)
+    for (size_t b = 0; b < batch.size(); ++b) {
+        if (results[b].agentIdx < 0) continue;
+        Agent& agent = agents_[results[b].agentIdx];
+        if (!agent.hasGoal) continue;
+        agent.path = std::move(results[b].path);
+        agent.currentWaypoint = 0;
     }
 }
 
-void World::setPathfinder(std::shared_ptr<IPathfinder> pf) {
-    pathfinder_ = pf;
-}
-
-void World::setSteeringBehavior(std::shared_ptr<ISteeringBehavior> sb) {
-    steering_ = sb;
-}
-
-void World::setFormation(std::shared_ptr<IFormation> f) {
-    formation_ = f;
-}
+void World::setPathfinder(std::shared_ptr<IPathfinder> pf) { pathfinder_ = pf; }
+void World::setSteeringBehavior(std::shared_ptr<ISteeringBehavior> sb) { steering_ = sb; }
+void World::setFormation(std::shared_ptr<IFormation> f) { formation_ = f; }
 
 bool World::collidesWithBarrier(Vec2 pos, float radius) const {
     for (const auto& b : barriers_) {
@@ -129,13 +151,11 @@ bool World::lineIntersectsBarrier(Vec2 a, Vec2 b) const {
     for (const auto& bar : barriers_) {
         Vec2 bmin = bar.center - bar.halfExtents;
         Vec2 bmax = bar.center + bar.halfExtents;
-
-        float dx = b.x - a.x;
-        float dy = b.y - a.y;
-        float p[4] = {-dx, dx, -dy, dy};
+        float ddx = b.x - a.x;
+        float ddy = b.y - a.y;
+        float p[4] = {-ddx, ddx, -ddy, ddy};
         float q[4] = {a.x - bmin.x, bmax.x - a.x, a.y - bmin.y, bmax.y - a.y};
         float tmin = 0.0f, tmax = 1.0f;
-
         bool outside = false;
         for (int i = 0; i < 4; ++i) {
             if (std::abs(p[i]) < 1e-10f) {
@@ -162,23 +182,19 @@ void World::rebuildSpatialHash() {
 void World::resolveAgentCollisions() {
     const int iterations = 3;
     for (int iter = 0; iter < iterations; ++iter) {
-        // Rebuild hash each iteration since positions shifted
         if (iter > 0) rebuildSpatialHash();
 
         for (size_t i = 0; i < agents_.size(); ++i) {
             spatialHash_.query(agents_[i].position, agents_[i].radius * 2.5f, neighborBuffer_);
             for (int j : neighborBuffer_) {
                 if (j <= (int)i) continue;
-
                 Vec2 diff = agents_[i].position - agents_[j].position;
                 float distSq = diff.lengthSq();
                 float minSep = agents_[i].radius + agents_[j].radius;
-
                 if (distSq < minSep * minSep && distSq > 1e-8f) {
                     float dist = std::sqrt(distSq);
                     Vec2 push = diff * (1.0f / dist);
                     float penetration = minSep - dist;
-
                     agents_[i].position += push * (penetration * 0.5f);
                     agents_[j].position -= push * (penetration * 0.5f);
                 }
@@ -188,22 +204,20 @@ void World::resolveAgentCollisions() {
 }
 
 void World::update(float dt) {
-    // Process deferred path requests
     processPathQueue();
-
     rebuildSpatialHash();
 
-    // Move agents along their paths
-    for (auto& agent : agents_) {
+    // Compute desired velocities (parallel - each agent independent)
+    threadPool_.parallelFor((int)agents_.size(), [this](int i) {
+        Agent& agent = agents_[i];
         if (!agent.hasGoal || agent.path.empty()) {
             agent.velocity = Vec2(0, 0);
-            continue;
+            return;
         }
-
         if (agent.currentWaypoint >= (int)agent.path.size()) {
             agent.hasGoal = false;
             agent.velocity = Vec2(0, 0);
-            continue;
+            return;
         }
 
         Vec2 target = agent.path[agent.currentWaypoint];
@@ -215,7 +229,7 @@ void World::update(float dt) {
             if (agent.currentWaypoint >= (int)agent.path.size()) {
                 agent.hasGoal = false;
                 agent.velocity = Vec2(0, 0);
-                continue;
+                return;
             }
             target = agent.path[agent.currentWaypoint];
             toTarget = target - agent.position;
@@ -223,40 +237,39 @@ void World::update(float dt) {
         }
 
         Vec2 desired = toTarget.normalized() * agent.maxSpeed;
-
         if (agent.currentWaypoint == (int)agent.path.size() - 1 &&
             dist < Config::ARRIVAL_SLOW_RADIUS) {
             desired = desired * (dist / Config::ARRIVAL_SLOW_RADIUS);
         }
-
         agent.velocity = desired;
-    }
+    });
 
     // Apply steering behaviors
     if (steering_) {
         steering_->apply(agents_, *this, dt);
     }
 
-    // Integrate positions
-    for (auto& agent : agents_) {
+    // Integrate positions (parallel)
+    const float mapW = Config::MAP_WIDTH;
+    const float mapH = Config::MAP_HEIGHT;
+    threadPool_.parallelFor((int)agents_.size(), [this, dt, mapW, mapH](int i) {
+        Agent& agent = agents_[i];
         if (agent.velocity.lengthSq() > agent.maxSpeed * agent.maxSpeed) {
             agent.velocity = agent.velocity.normalized() * agent.maxSpeed;
         }
-
         agent.position += agent.velocity * dt;
-
         if (agent.velocity.lengthSq() > 1e-4f) {
             agent.direction = agent.velocity.normalized();
         }
-
         agent.position.x = std::max(agent.radius,
-                           std::min(agent.position.x, Config::MAP_WIDTH - agent.radius));
+                           std::min(agent.position.x, mapW - agent.radius));
         agent.position.y = std::max(agent.radius,
-                           std::min(agent.position.y, Config::MAP_HEIGHT - agent.radius));
-    }
+                           std::min(agent.position.y, mapH - agent.radius));
+    });
 
-    // Push agents out of barriers
-    for (auto& agent : agents_) {
+    // Push agents out of barriers (parallel - each agent vs all barriers is independent)
+    threadPool_.parallelFor((int)agents_.size(), [this](int i) {
+        Agent& agent = agents_[i];
         for (const auto& b : barriers_) {
             Vec2 closest = b.closestPoint(agent.position);
             Vec2 diff = agent.position - closest;
@@ -275,9 +288,9 @@ void World::update(float dt) {
                 else agent.position.y += dy2 + agent.radius;
             }
         }
-    }
+    });
 
-    // Resolve agent-agent collisions
+    // Resolve agent-agent collisions (sequential - agents affect each other)
     rebuildSpatialHash();
     resolveAgentCollisions();
 }
