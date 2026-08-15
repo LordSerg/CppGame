@@ -15,7 +15,6 @@ public:
                    bool showUnderground, bool showBarriers,
                    float viewportWidth, float viewportHeight);
 
-    // Call when map data changes to force texture rebuild
     void invalidateTextures();
 
 private:

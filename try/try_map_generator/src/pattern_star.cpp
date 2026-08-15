@@ -7,60 +7,37 @@
 #endif
 
 PatternStar::PatternStar(std::mt19937& rng, PerlinNoise& noise)
-    : rng_(rng), noise_(noise), fractal_(rng) {}
+    : rng_(rng), noise_(noise), fractal_(rng), placement_(rng, noise) {}
 
-void PatternStar::generate(MapData& map, int numPlayers,
+void PatternStar::generate(MapData& map, int numPlayers, PlacementMode placementMode,
                             const WaterParams& waterParams,
                             const MetalParams& metalParams) {
-    placeStartingAreas(map, numPlayers);
-    fillForest(map);
-    carvePaths(map);
-    placeMetalDeposits(map, metalParams);
+    PlacementResult pr = placement_.place(map, numPlayers, placementMode);
 
-    int riverCount = std::max(1, map.getWidth() / 500);
-    fractal_.generateRiverSystem(map, riverCount, waterParams);
-}
-
-void PatternStar::placeStartingAreas(MapData& map, int numPlayers) {
-    int w = map.getWidth();
-    int h = map.getHeight();
-
-    float centerX = w / 2.0f;
-    float centerY = h / 2.0f;
-    float radius = std::min(w, h) * 0.38f;
-    int areaRadius = (int)(std::min(w, h) * 0.06f);
-    areaRadius = std::max(areaRadius, 25);
-
-    for (int i = 0; i < numPlayers; i++) {
-        float angle = 2.0f * (float)M_PI * i / numPlayers - (float)M_PI / 2.0f;
-        int cx = (int)(centerX + radius * std::cos(angle));
-        int cy = (int)(centerY + radius * std::sin(angle));
-
-        cx = std::clamp(cx, areaRadius + 10, w - areaRadius - 10);
-        cy = std::clamp(cy, areaRadius + 10, h - areaRadius - 10);
-
-        StartingArea sa;
-        sa.centerX = cx;
-        sa.centerY = cy;
-        sa.radius = areaRadius;
-        sa.playerIndex = i;
+    for (auto& sa : pr.areas) {
         map.addStartingArea(sa);
+        map.setTile(sa.centerX, sa.centerY, TileType::StartingPoint);
 
-        map.setTile(cx, cy, TileType::StartingPoint);
-
-        int clearRadius = areaRadius / 2;
+        int clearRadius = sa.radius / 2;
         for (int dy = -clearRadius; dy <= clearRadius; dy++) {
             for (int dx = -clearRadius; dx <= clearRadius; dx++) {
                 if (dx * dx + dy * dy <= clearRadius * clearRadius) {
-                    int nx = cx + dx;
-                    int ny = cy + dy;
-                    if (map.inBounds(nx, ny)) {
+                    int nx = sa.centerX + dx;
+                    int ny = sa.centerY + dy;
+                    if (map.inBounds(nx, ny) && map.getTile(nx, ny) != TileType::StartingPoint) {
                         map.setTile(nx, ny, TileType::Ground);
                     }
                 }
             }
         }
     }
+
+    fillForest(map);
+    carvePaths(map);
+    placeMetalDeposits(map, metalParams);
+
+    int riverCount = std::max(1, map.getWidth() / 500);
+    fractal_.generateRiverSystem(map, riverCount, waterParams);
 }
 
 void PatternStar::carvePath(MapData& map, int x1, int y1, int x2, int y2, int width) {
@@ -113,7 +90,7 @@ void PatternStar::carvePaths(MapData& map) {
     int pathWidth = std::max(3, w / 150);
     auto& areas = map.getStartingAreas();
 
-    // Paths from each starting area to center (star pattern)
+    // Star: all paths to center
     for (auto& sa : areas) {
         carvePath(map, sa.centerX, sa.centerY, centerX, centerY, pathWidth);
     }
@@ -135,7 +112,7 @@ void PatternStar::carvePaths(MapData& map) {
         }
     }
 
-    // Paths between adjacent players
+    // Adjacent player paths
     for (size_t i = 0; i < areas.size(); i++) {
         size_t j = (i + 1) % areas.size();
         int mx = (areas[i].centerX + areas[j].centerX) / 2;

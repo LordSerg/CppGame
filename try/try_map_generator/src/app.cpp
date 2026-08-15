@@ -5,14 +5,14 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
-#include <ctime>
 #include <random>
 #include <string>
 #include <algorithm>
 
 App::App()
     : window_(nullptr), windowWidth_(1280), windowHeight_(720),
-      currentPattern_(0), currentSize_(0), numPlayers_(2),
+      currentPattern_(0), currentSize_(0), currentPlacement_(0),
+      numPlayers_(2),
       currentSeed_(12345),
       waterDensity_(1.0f), waterWidth_(1.0f),
       metalDensity_(1.0f), metalWidth_(1.0f),
@@ -29,16 +29,12 @@ App::~App() {
 }
 
 void App::zoomAtScreenPoint(float screenX, float screenY, float zoomDelta) {
-    // Convert screen point to world coordinates before zoom
     float worldX = (screenX - camOffsetX_) / camZoom_;
     float worldY = (screenY - camOffsetY_) / camZoom_;
 
-    // Apply zoom
-    float oldZoom = camZoom_;
     camZoom_ *= zoomDelta;
     camZoom_ = std::clamp(camZoom_, 0.02f, 30.0f);
 
-    // Adjust offset so worldX, worldY stays at the same screen position
     camOffsetX_ = screenX - worldX * camZoom_;
     camOffsetY_ = screenY - worldY * camZoom_;
 }
@@ -46,10 +42,8 @@ void App::zoomAtScreenPoint(float screenX, float screenY, float zoomDelta) {
 void App::scrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset) {
     App* app = (App*)glfwGetWindowUserPointer(window);
     if (!app) return;
-
     if (ImGui::GetIO().WantCaptureMouse) return;
 
-    // Zoom toward center of window
     float centerX = (float)app->windowWidth_ * 0.5f;
     float centerY = (float)app->windowHeight_ * 0.5f;
 
@@ -82,7 +76,6 @@ bool App::init(int width, int height, const char* title) {
 
     glfwMakeContextCurrent(window_);
     glfwSwapInterval(1);
-
     glfwSetWindowUserPointer(window_, this);
     glfwSetScrollCallback(window_, scrollCallback);
 
@@ -117,24 +110,46 @@ void App::centerCameraOnMap() {
     float mapW = (float)mapData_.getWidth();
     float mapH = (float)mapData_.getHeight();
 
-    // Fit map to window with some margin
     float scaleX = (float)(windowWidth_ - 20) / mapW;
     float scaleY = (float)(windowHeight_ - 20) / mapH;
     camZoom_ = std::min(scaleX, scaleY) * 0.9f;
 
-    // Center the map in window
     float renderedW = mapW * camZoom_;
     float renderedH = mapH * camZoom_;
     camOffsetX_ = ((float)windowWidth_ - renderedW) * 0.5f;
     camOffsetY_ = ((float)windowHeight_ - renderedH) * 0.5f;
 }
 
+void App::generateMap() {
+    currentSeed_ = (uint32_t)strtoul(seedText_, nullptr, 10);
+
+    GenerationParams params;
+    switch (currentSize_) {
+        case 0: params.size = MapSize::Small; break;
+        case 1: params.size = MapSize::Mid; break;
+        case 2: params.size = MapSize::Big; break;
+        case 3: params.size = MapSize::Mammoth; break;
+        default: params.size = MapSize::Small;
+    }
+
+    params.pattern = (MapPattern)currentPattern_;
+    params.placement = (PlacementMode)currentPlacement_;
+    params.numPlayers = numPlayers_;
+    params.seed = currentSeed_;
+    params.water.densityMultiplier = waterDensity_;
+    params.water.widthMultiplier = waterWidth_;
+    params.metal.densityMultiplier = metalDensity_;
+    params.metal.widthMultiplier = metalWidth_;
+    params.metal.intensityMultiplier = 1.0f;
+
+    generator_.generate(mapData_, params);
+    mapGenerated_ = true;
+    renderer_.invalidateTextures();
+    centerCameraOnMap();
+}
+
 void App::processInput(float deltaTime) {
-    // Keyboard camera movement (WASD / Arrow keys)
-    // Only when ImGui doesn't want keyboard input
     if (!ImGui::GetIO().WantCaptureKeyboard) {
-        float moveAmount = camMoveSpeed_ * deltaTime / camZoom_;
-        // Scale move speed with zoom so it feels consistent
         float pixelMove = camMoveSpeed_ * deltaTime;
 
         if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS ||
@@ -154,27 +169,24 @@ void App::processInput(float deltaTime) {
             camOffsetX_ -= pixelMove;
         }
 
-        // Keyboard zoom: + / - or Q / E
         if (glfwGetKey(window_, GLFW_KEY_EQUAL) == GLFW_PRESS ||
             glfwGetKey(window_, GLFW_KEY_E) == GLFW_PRESS) {
-            float centerX = (float)windowWidth_ * 0.5f;
-            float centerY = (float)windowHeight_ * 0.5f;
-            zoomAtScreenPoint(centerX, centerY, 1.0f + 1.5f * deltaTime);
+            float cx = (float)windowWidth_ * 0.5f;
+            float cy = (float)windowHeight_ * 0.5f;
+            zoomAtScreenPoint(cx, cy, 1.0f + 1.5f * deltaTime);
         }
         if (glfwGetKey(window_, GLFW_KEY_MINUS) == GLFW_PRESS ||
             glfwGetKey(window_, GLFW_KEY_Q) == GLFW_PRESS) {
-            float centerX = (float)windowWidth_ * 0.5f;
-            float centerY = (float)windowHeight_ * 0.5f;
-            zoomAtScreenPoint(centerX, centerY, 1.0f - 1.5f * deltaTime);
+            float cx = (float)windowWidth_ * 0.5f;
+            float cy = (float)windowHeight_ * 0.5f;
+            zoomAtScreenPoint(cx, cy, 1.0f - 1.5f * deltaTime);
         }
 
-        // Home key to reset view
         if (glfwGetKey(window_, GLFW_KEY_HOME) == GLFW_PRESS) {
             centerCameraOnMap();
         }
     }
 
-    // Mouse drag
     if (ImGui::GetIO().WantCaptureMouse) {
         isDragging_ = false;
         return;
@@ -203,147 +215,123 @@ void App::processInput(float deltaTime) {
 void App::renderUI() {
     ImGui::Begin("Map Generator Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
 
-    // Pattern selection
+    // === Pattern ===
     const char* patterns[] = {"Cell", "Star", "Archipelago"};
     ImGui::Combo("Map Pattern", &currentPattern_, patterns, IM_ARRAYSIZE(patterns));
 
-    // Show pattern description
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
     switch (currentPattern_) {
         case 0:
-            ImGui::TextWrapped("Cell: Players in rock-walled enclosures. Break out to access common forest.");
+            ImGui::TextWrapped("Players enclosed in rock walls. Break out to access common forest.");
             break;
         case 1:
-            ImGui::TextWrapped("Star: Players on edges, paths radiate to center clearing through forest.");
+            ImGui::TextWrapped("Players on edges, paths radiate to center through forest.");
             break;
         case 2:
-            ImGui::TextWrapped("Archipelago: Noise-based water terrain with land bridges connecting players.");
+            ImGui::TextWrapped("Noise-based water terrain with land bridges.");
             break;
     }
     ImGui::PopStyleColor();
 
     ImGui::Separator();
 
-    // Size selection
+    // === Placement mode ===
+    const char* placements[] = {
+        "Circle (Symmetric)",
+        "Organic (Natural shapes)",
+        "Voronoi (Territory cells)",
+        "Spiral (Golden ratio)",
+        "Clustered (Teams)"
+    };
+    ImGui::Combo("Placement", &currentPlacement_, placements, IM_ARRAYSIZE(placements));
+
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.75f, 0.65f, 1.0f));
+    switch (currentPlacement_) {
+        case 0:
+            ImGui::TextWrapped("Players equally spaced on a circle. Classic symmetric layout.");
+            break;
+        case 1:
+            ImGui::TextWrapped("Positions jittered, areas have noise-distorted organic boundaries like natural formations.");
+            break;
+        case 2:
+            ImGui::TextWrapped("Areas defined by Voronoi cells with noise-warped edges. Territory-like shapes.");
+            break;
+        case 3:
+            ImGui::TextWrapped("Golden-angle spiral placement (Fibonacci). Organic shapes. Unique asymmetric feel.");
+            break;
+        case 4:
+            ImGui::TextWrapped("Players grouped into 2-4 clusters (team positions). Organic shapes within clusters.");
+            break;
+    }
+    ImGui::PopStyleColor();
+
+    ImGui::Separator();
+
+    // === Size ===
     const char* sizes[] = {"Small (500x500)", "Mid (1000x1000)", "Big (2000x2000)", "Mammoth (4000x4000)"};
     ImGui::Combo("Map Size", &currentSize_, sizes, IM_ARRAYSIZE(sizes));
 
-    // Player count
+    // === Players ===
     ImGui::SliderInt("Players", &numPlayers_, 2, 8);
 
-    // Seed
+    // === Seed ===
     ImGui::Separator();
     ImGui::Text("Seed:");
     ImGui::PushItemWidth(150);
-    if (ImGui::InputText("##seed", seedText_, sizeof(seedText_),
-                          ImGuiInputTextFlags_CharsDecimal)) {
-        // User edited seed text
-    }
+    ImGui::InputText("##seed", seedText_, sizeof(seedText_), ImGuiInputTextFlags_CharsDecimal);
     ImGui::PopItemWidth();
     ImGui::SameLine();
     if (ImGui::Button("Reroll")) {
         rerollSeed();
     }
 
-    // Water controls
+    // === Water ===
     ImGui::Separator();
     ImGui::Text("Water (Rivers):");
     ImGui::SliderFloat("River Density", &waterDensity_, 0.2f, 4.0f, "%.1f");
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Number of river sources and branch frequency");
+        ImGui::SetTooltip("Number of river sources and branching frequency");
     ImGui::SliderFloat("River Width", &waterWidth_, 0.3f, 4.0f, "%.1f");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Thickness of river channels");
 
-    // Metal controls
+    // === Metal ===
     ImGui::Separator();
     ImGui::Text("Metal (Underground Veins):");
     ImGui::SliderFloat("Vein Density", &metalDensity_, 0.3f, 4.0f, "%.1f");
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Number of metal vein clusters and branch frequency");
+        ImGui::SetTooltip("Number of metal vein clusters");
     ImGui::SliderFloat("Vein Width", &metalWidth_, 0.3f, 4.0f, "%.1f");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Thickness of underground metal veins");
 
-    // Generate button
+    // === Generate ===
     ImGui::Separator();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.5f, 0.15f, 1.0f));
     if (ImGui::Button("Generate Map", ImVec2(220, 45))) {
-        currentSeed_ = (uint32_t)strtoul(seedText_, nullptr, 10);
-
-        GenerationParams params;
-        switch (currentSize_) {
-            case 0: params.size = MapSize::Small; break;
-            case 1: params.size = MapSize::Mid; break;
-            case 2: params.size = MapSize::Big; break;
-            case 3: params.size = MapSize::Mammoth; break;
-            default: params.size = MapSize::Small;
-        }
-
-        params.pattern = (MapPattern)currentPattern_;
-        params.numPlayers = numPlayers_;
-        params.seed = currentSeed_;
-
-        params.water.densityMultiplier = waterDensity_;
-        params.water.widthMultiplier = waterWidth_;
-
-        params.metal.densityMultiplier = metalDensity_;
-        params.metal.widthMultiplier = metalWidth_;
-        params.metal.intensityMultiplier = 1.0f;
-
-        generator_.generate(mapData_, params);
-        mapGenerated_ = true;
-        renderer_.invalidateTextures();
-
-        centerCameraOnMap();
+        generateMap();
     }
     ImGui::PopStyleColor(3);
 
-    // Quick regenerate with new random seed
     ImGui::SameLine();
     if (ImGui::Button("Quick\nReroll", ImVec2(70, 45))) {
         rerollSeed();
-        currentSeed_ = (uint32_t)strtoul(seedText_, nullptr, 10);
-
-        GenerationParams params;
-        switch (currentSize_) {
-            case 0: params.size = MapSize::Small; break;
-            case 1: params.size = MapSize::Mid; break;
-            case 2: params.size = MapSize::Big; break;
-            case 3: params.size = MapSize::Mammoth; break;
-            default: params.size = MapSize::Small;
-        }
-
-        params.pattern = (MapPattern)currentPattern_;
-        params.numPlayers = numPlayers_;
-        params.seed = currentSeed_;
-        params.water.densityMultiplier = waterDensity_;
-        params.water.widthMultiplier = waterWidth_;
-        params.metal.densityMultiplier = metalDensity_;
-        params.metal.widthMultiplier = metalWidth_;
-        params.metal.intensityMultiplier = 1.0f;
-
-        generator_.generate(mapData_, params);
-        mapGenerated_ = true;
-        renderer_.invalidateTextures();
-        centerCameraOnMap();
+        generateMap();
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Reroll seed and regenerate immediately");
 
-    // View controls
+    // === View ===
     ImGui::Separator();
     ImGui::Text("View Options:");
-    if (ImGui::Checkbox("Show Underground (Metal Veins)", &showUnderground_)) {
-        // No regeneration needed, just re-render
-    }
+    if (ImGui::Checkbox("Show Underground (Metal Veins)", &showUnderground_)) {}
     if (ImGui::Checkbox("Show Barriers (Blocked Tiles)", &showBarriers_)) {
         renderer_.invalidateTextures();
     }
 
-    // Camera controls
+    // === Camera ===
     ImGui::Separator();
     ImGui::Text("Camera: Zoom %.2fx", camZoom_);
     ImGui::SliderFloat("Move Speed", &camMoveSpeed_, 100.0f, 2000.0f, "%.0f px/s");
@@ -351,32 +339,44 @@ void App::renderUI() {
         centerCameraOnMap();
     }
 
+    // === Navigation help ===
     ImGui::Separator();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.55f, 1.0f));
     ImGui::Text("Navigation:");
     ImGui::BulletText("WASD / Arrows: Pan");
-    ImGui::BulletText("Q / E or +/-: Zoom");
+    ImGui::BulletText("Q/E or +/-: Zoom");
     ImGui::BulletText("Mouse drag: Pan");
-    ImGui::BulletText("Scroll wheel: Zoom to center");
+    ImGui::BulletText("Scroll: Zoom to center");
     ImGui::BulletText("Home: Reset view");
     ImGui::PopStyleColor();
 
-    // Info
+    // === Info ===
     if (mapGenerated_) {
         ImGui::Separator();
-        ImGui::Text("Map: %dx%d", mapData_.getWidth(), mapData_.getHeight());
-        ImGui::Text("Players: %d", (int)mapData_.getStartingAreas().size());
-        ImGui::Text("Seed: %u", currentSeed_);
+        ImGui::Text("Map: %dx%d  |  Players: %d  |  Seed: %u",
+                     mapData_.getWidth(), mapData_.getHeight(),
+                     (int)mapData_.getStartingAreas().size(), currentSeed_);
+        ImGui::Text("Pattern: %s  |  Placement: %s",
+                     patterns[currentPattern_], placements[currentPlacement_]);
 
-        // Legend
+        // Starting area info
+        if (ImGui::TreeNode("Starting Areas")) {
+            for (auto& sa : mapData_.getStartingAreas()) {
+                ImGui::Text("Player %d: (%d, %d) r=%d %s",
+                            sa.playerIndex + 1, sa.centerX, sa.centerY, sa.radius,
+                            sa.hasShape() ? "(shaped)" : "(circle)");
+            }
+            ImGui::TreePop();
+        }
+
         ImGui::Separator();
         ImGui::Text("Legend:");
         ImGui::TextColored(ImVec4(0.55f, 0.35f, 0.17f, 1.0f), "  Brown = Ground");
-        ImGui::TextColored(ImVec4(0.13f, 0.55f, 0.13f, 1.0f), "  Green = Trees (removable barrier)");
-        ImGui::TextColored(ImVec4(0.59f, 0.59f, 0.59f, 1.0f), "  Gray = Rocks (removable barrier)");
-        ImGui::TextColored(ImVec4(0.12f, 0.39f, 0.78f, 1.0f), "  Blue = Water (permanent barrier)");
-        ImGui::TextColored(ImVec4(0.8f, 0.5f, 0.1f, 1.0f),    "  Orange = Metal veins (underground)");
-        ImGui::Text("  Colored dots = Player starting points");
+        ImGui::TextColored(ImVec4(0.13f, 0.55f, 0.13f, 1.0f), "  Green = Trees (removable)");
+        ImGui::TextColored(ImVec4(0.59f, 0.59f, 0.59f, 1.0f), "  Gray = Rocks (removable)");
+        ImGui::TextColored(ImVec4(0.12f, 0.39f, 0.78f, 1.0f), "  Blue = Water (permanent)");
+        ImGui::TextColored(ImVec4(0.8f, 0.5f, 0.1f, 1.0f),    "  Orange = Metal (underground)");
+        ImGui::Text("  Colored dots = Player starts");
     }
 
     ImGui::End();
@@ -389,7 +389,6 @@ void App::run() {
         double currentTime = glfwGetTime();
         float deltaTime = (float)(currentTime - lastTime);
         lastTime = currentTime;
-        // Clamp delta to prevent huge jumps
         deltaTime = std::min(deltaTime, 0.05f);
 
         glfwPollEvents();
@@ -400,7 +399,6 @@ void App::run() {
         glClearColor(0.12f, 0.12f, 0.14f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // Render map
         if (mapGenerated_) {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -410,7 +408,6 @@ void App::run() {
             glDisable(GL_BLEND);
         }
 
-        // Render ImGui
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();

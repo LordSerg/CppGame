@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <set>
 
 static const char* vertexShaderSource = R"(
 #version 330 core
@@ -16,7 +17,6 @@ uniform vec2 uViewport;
 out vec2 TexCoord;
 
 void main() {
-    // Transform: world position -> screen pixel -> NDC
     vec2 screenPos = aPos * uZoom + uOffset;
     vec2 ndc = (screenPos / uViewport) * 2.0 - 1.0;
     ndc.y = -ndc.y;
@@ -39,11 +39,10 @@ void main() {
     if (uShowMetal) {
         float metal = texture(uMetalTex, TexCoord).r;
         if (metal > 0.03) {
-            // Frozen underground river of metal: copper/amber glow
-            float glow = metal * metal; // nonlinear for more contrast
+            float glow = metal * metal;
             vec3 metalColor = mix(
-                vec3(0.6, 0.35, 0.05),  // dark copper
-                vec3(1.0, 0.7, 0.15),   // bright gold
+                vec3(0.6, 0.35, 0.05),
+                vec3(1.0, 0.7, 0.15),
                 glow
             );
             mapColor.rgb = mix(mapColor.rgb, metalColor, metal * 0.85);
@@ -121,7 +120,6 @@ void Renderer::createBuffers() {
         0.0f, 0.0f,  0.0f, 0.0f,
         1.0f, 0.0f,  1.0f, 0.0f,
         1.0f, 1.0f,  1.0f, 1.0f,
-
         0.0f, 0.0f,  0.0f, 0.0f,
         1.0f, 1.0f,  1.0f, 1.0f,
         0.0f, 1.0f,  0.0f, 1.0f,
@@ -132,7 +130,7 @@ void Renderer::createBuffers() {
 
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), nullptr, GL_DYNAMIC_DRAW);
 
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
@@ -173,6 +171,11 @@ void Renderer::updateMapTexture(const MapData& map, bool showBarriers) {
         {255, 180, 180},
     };
 
+    // Pre-build starting area marker sets for efficient lookup
+    struct MarkerInfo { int playerIndex; };
+    // For each starting area, compute marker radius
+    auto& areas = map.getStartingAreas();
+
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             int idx = (y * w + x) * 4;
@@ -196,7 +199,7 @@ void Renderer::updateMapTexture(const MapData& map, bool showBarriers) {
                     break;
                 case TileType::StartingPoint: {
                     int pi = 0;
-                    for (auto& sa : map.getStartingAreas()) {
+                    for (auto& sa : areas) {
                         int dx = x - sa.centerX;
                         int dy = y - sa.centerY;
                         if (dx * dx + dy * dy < 25) {
@@ -212,17 +215,23 @@ void Renderer::updateMapTexture(const MapData& map, bool showBarriers) {
                 }
             }
 
-            // Expand starting point marker to be more visible
+            // Player markers (enlarged for visibility)
             if (tile != TileType::StartingPoint) {
-                for (auto& sa : map.getStartingAreas()) {
+                for (auto& sa : areas) {
                     int dx = x - sa.centerX;
                     int dy = y - sa.centerY;
-                    int markerSize = std::max(3, sa.radius / 8);
+                    int markerSize = std::max(4, sa.radius / 6);
                     if (dx * dx + dy * dy < markerSize * markerSize) {
                         int pi = std::clamp(sa.playerIndex, 0, 7);
                         r = playerColors[pi][0];
                         g = playerColors[pi][1];
                         b = playerColors[pi][2];
+
+                        // White border for marker
+                        int innerSize = markerSize - 2;
+                        if (dx * dx + dy * dy >= innerSize * innerSize) {
+                            r = 255; g = 255; b = 255;
+                        }
                         break;
                     }
                 }
@@ -275,7 +284,6 @@ void Renderer::renderMap(const MapData& map, float offsetX, float offsetY, float
                           float viewportWidth, float viewportHeight) {
     if (map.getWidth() == 0 || map.getHeight() == 0) return;
 
-    // Update textures only when needed
     if (texturesDirty_ || showBarriers != lastShowBarriers_) {
         updateMapTexture(map, showBarriers);
         updateMetalTexture(map);
@@ -305,7 +313,6 @@ void Renderer::renderMap(const MapData& map, float offsetX, float offsetY, float
         0.0f, 0.0f,  0.0f, 0.0f,
         mapW, 0.0f,  1.0f, 0.0f,
         mapW, mapH,  1.0f, 1.0f,
-
         0.0f, 0.0f,  0.0f, 0.0f,
         mapW, mapH,  1.0f, 1.0f,
         0.0f, mapH,  0.0f, 1.0f,

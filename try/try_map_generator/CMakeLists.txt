@@ -44,6 +44,7 @@ file(GLOB_RECURSE SOURCES
     src/pattern_cell.cpp
     src/pattern_star.cpp
     src/pattern_archipelago.cpp
+    src/placement.cpp
 )
 
 file(GLOB_RECURSE HEADERS
@@ -57,6 +58,7 @@ file(GLOB_RECURSE HEADERS
     src/pattern_star.h
     src/pattern_archipelago.h
     src/pathfinding.h
+    src/placement.h
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})

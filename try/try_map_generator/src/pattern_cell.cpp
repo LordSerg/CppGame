@@ -1,19 +1,66 @@
 #include "pattern_cell.h"
 #include <cmath>
 #include <algorithm>
+#include <set>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 PatternCell::PatternCell(std::mt19937& rng, PerlinNoise& noise)
-    : rng_(rng), noise_(noise), fractal_(rng) {}
+    : rng_(rng), noise_(noise), fractal_(rng), placement_(rng, noise) {}
 
-void PatternCell::generate(MapData& map, int numPlayers,
+bool PatternCell::isInsideStartArea(const StartingArea& sa, int x, int y) const {
+    if (sa.hasShape()) {
+        // Check shape tiles - use squared distance as quick reject first
+        int dx = x - sa.centerX;
+        int dy = y - sa.centerY;
+        if (dx * dx + dy * dy > (int)(sa.radius * sa.radius * 2.5f)) return false;
+
+        for (auto& [tx, ty] : sa.shapeTiles) {
+            if (tx == x && ty == y) return true;
+        }
+        return false;
+    } else {
+        int dx = x - sa.centerX;
+        int dy = y - sa.centerY;
+        return dx * dx + dy * dy <= sa.radius * sa.radius;
+    }
+}
+
+bool PatternCell::isInsideAnyStartArea(const MapData& map, int x, int y) const {
+    for (auto& sa : map.getStartingAreas()) {
+        if (isInsideStartArea(sa, x, y)) return true;
+    }
+    return false;
+}
+
+void PatternCell::generate(MapData& map, int numPlayers, PlacementMode placementMode,
                             const WaterParams& waterParams,
                             const MetalParams& metalParams) {
-    placeStartingAreas(map, numPlayers);
-    buildRockWalls(map);
+    // Place starting areas using selected strategy
+    PlacementResult pr = placement_.place(map, numPlayers, placementMode);
+
+    for (auto& sa : pr.areas) {
+        map.addStartingArea(sa);
+        map.setTile(sa.centerX, sa.centerY, TileType::StartingPoint);
+
+        // Clear space around starting point
+        int clearRadius = sa.radius / 3;
+        for (int dy = -clearRadius; dy <= clearRadius; dy++) {
+            for (int dx = -clearRadius; dx <= clearRadius; dx++) {
+                if (dx * dx + dy * dy <= clearRadius * clearRadius) {
+                    int nx = sa.centerX + dx;
+                    int ny = sa.centerY + dy;
+                    if (map.inBounds(nx, ny) && map.getTile(nx, ny) != TileType::StartingPoint) {
+                        map.setTile(nx, ny, TileType::Ground);
+                    }
+                }
+            }
+        }
+    }
+
+    buildWalls(map);
     fillStartingAreaTrees(map);
     fillCommonAreaForest(map);
     placeMetalDeposits(map, metalParams);
@@ -22,61 +69,29 @@ void PatternCell::generate(MapData& map, int numPlayers,
     fractal_.generateRiverSystem(map, riverCount, waterParams);
 }
 
-void PatternCell::placeStartingAreas(MapData& map, int numPlayers) {
-    int w = map.getWidth();
-    int h = map.getHeight();
-
-    float centerX = w / 2.0f;
-    float centerY = h / 2.0f;
-    float radius = std::min(w, h) * 0.35f;
-    int areaRadius = (int)(std::min(w, h) * 0.08f);
-    areaRadius = std::max(areaRadius, 30);
-
-    for (int i = 0; i < numPlayers; i++) {
-        float angle = 2.0f * (float)M_PI * i / numPlayers - (float)M_PI / 2.0f;
-        int cx = (int)(centerX + radius * std::cos(angle));
-        int cy = (int)(centerY + radius * std::sin(angle));
-
-        cx = std::clamp(cx, areaRadius + 10, w - areaRadius - 10);
-        cy = std::clamp(cy, areaRadius + 10, h - areaRadius - 10);
-
-        StartingArea sa;
-        sa.centerX = cx;
-        sa.centerY = cy;
-        sa.radius = areaRadius;
-        sa.playerIndex = i;
-        map.addStartingArea(sa);
-
-        map.setTile(cx, cy, TileType::StartingPoint);
-
-        int clearRadius = areaRadius / 3;
-        for (int dy = -clearRadius; dy <= clearRadius; dy++) {
-            for (int dx = -clearRadius; dx <= clearRadius; dx++) {
-                if (dx * dx + dy * dy <= clearRadius * clearRadius) {
-                    int nx = cx + dx;
-                    int ny = cy + dy;
-                    if (map.inBounds(nx, ny)) {
-                        map.setTile(nx, ny, TileType::Ground);
-                    }
+void PatternCell::buildWalls(MapData& map) {
+    for (auto& sa : map.getStartingAreas()) {
+        if (sa.hasShape()) {
+            // Use pre-computed boundary tiles for shaped areas
+            for (auto& [bx, by] : sa.boundaryTiles) {
+                if (map.inBounds(bx, by) && map.getTile(bx, by) == TileType::Ground) {
+                    map.setTile(bx, by, TileType::Rock);
                 }
             }
-        }
-    }
-}
+        } else {
+            // Circle wall (original behavior)
+            int wallRadius = sa.radius;
+            int wallThickness = std::max(3, sa.radius / 8);
 
-void PatternCell::buildRockWalls(MapData& map) {
-    for (auto& sa : map.getStartingAreas()) {
-        int wallRadius = sa.radius;
-        int wallThickness = std::max(3, sa.radius / 8);
-
-        for (int dy = -(wallRadius + wallThickness); dy <= wallRadius + wallThickness; dy++) {
-            for (int dx = -(wallRadius + wallThickness); dx <= wallRadius + wallThickness; dx++) {
-                float dist = std::sqrt((float)(dx * dx + dy * dy));
-                if (dist >= wallRadius - 1 && dist <= wallRadius + wallThickness) {
-                    int nx = sa.centerX + dx;
-                    int ny = sa.centerY + dy;
-                    if (map.inBounds(nx, ny) && map.getTile(nx, ny) == TileType::Ground) {
-                        map.setTile(nx, ny, TileType::Rock);
+            for (int dy = -(wallRadius + wallThickness); dy <= wallRadius + wallThickness; dy++) {
+                for (int dx = -(wallRadius + wallThickness); dx <= wallRadius + wallThickness; dx++) {
+                    float dist = std::sqrt((float)(dx * dx + dy * dy));
+                    if (dist >= wallRadius - 1 && dist <= wallRadius + wallThickness) {
+                        int nx = sa.centerX + dx;
+                        int ny = sa.centerY + dy;
+                        if (map.inBounds(nx, ny) && map.getTile(nx, ny) == TileType::Ground) {
+                            map.setTile(nx, ny, TileType::Rock);
+                        }
                     }
                 }
             }
@@ -88,19 +103,41 @@ void PatternCell::fillStartingAreaTrees(MapData& map) {
     std::uniform_real_distribution<float> treeDist(0.0f, 1.0f);
 
     for (auto& sa : map.getStartingAreas()) {
-        int innerRadius = sa.radius - std::max(4, sa.radius / 8) - 2;
         int clearRadius = sa.radius / 3;
 
-        for (int dy = -innerRadius; dy <= innerRadius; dy++) {
-            for (int dx = -innerRadius; dx <= innerRadius; dx++) {
+        if (sa.hasShape()) {
+            // Place trees inside shape but outside clear zone and boundary
+            std::set<std::pair<int,int>> boundarySet(sa.boundaryTiles.begin(), sa.boundaryTiles.end());
+
+            for (auto& [tx, ty] : sa.shapeTiles) {
+                int dx = tx - sa.centerX;
+                int dy = ty - sa.centerY;
                 float dist = std::sqrt((float)(dx * dx + dy * dy));
-                if (dist > clearRadius && dist < innerRadius) {
-                    int nx = sa.centerX + dx;
-                    int ny = sa.centerY + dy;
-                    if (map.inBounds(nx, ny) && map.getTile(nx, ny) == TileType::Ground) {
-                        float n = (float)noise_.octaveNoise(nx * 0.05, ny * 0.05, 3);
+
+                if (dist > clearRadius && boundarySet.find({tx, ty}) == boundarySet.end()) {
+                    if (map.inBounds(tx, ty) && map.getTile(tx, ty) == TileType::Ground) {
+                        float n = (float)noise_.octaveNoise(tx * 0.05, ty * 0.05, 3);
                         if (n > -0.1f && treeDist(rng_) < 0.4f) {
-                            map.setTile(nx, ny, TileType::Tree);
+                            map.setTile(tx, ty, TileType::Tree);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Original circular behavior
+            int innerRadius = sa.radius - std::max(4, sa.radius / 8) - 2;
+
+            for (int dy = -innerRadius; dy <= innerRadius; dy++) {
+                for (int dx = -innerRadius; dx <= innerRadius; dx++) {
+                    float dist = std::sqrt((float)(dx * dx + dy * dy));
+                    if (dist > clearRadius && dist < innerRadius) {
+                        int nx = sa.centerX + dx;
+                        int ny = sa.centerY + dy;
+                        if (map.inBounds(nx, ny) && map.getTile(nx, ny) == TileType::Ground) {
+                            float n = (float)noise_.octaveNoise(nx * 0.05, ny * 0.05, 3);
+                            if (n > -0.1f && treeDist(rng_) < 0.4f) {
+                                map.setTile(nx, ny, TileType::Tree);
+                            }
                         }
                     }
                 }
@@ -114,6 +151,8 @@ void PatternCell::fillCommonAreaForest(MapData& map) {
     int h = map.getHeight();
     std::uniform_real_distribution<float> prob(0.0f, 1.0f);
 
+    // Build a fast lookup for shaped areas
+    // For large maps, we'll use bounding-box checks + distance
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             if (map.getTile(x, y) != TileType::Ground) continue;
@@ -122,8 +161,17 @@ void PatternCell::fillCommonAreaForest(MapData& map) {
             for (auto& sa : map.getStartingAreas()) {
                 int dx = x - sa.centerX;
                 int dy = y - sa.centerY;
-                if (dx * dx + dy * dy < (sa.radius + 10) * (sa.radius + 10)) {
-                    inStart = true;
+                float expandedR = sa.radius + 10.0f;
+                if (dx * dx + dy * dy < expandedR * expandedR) {
+                    // Could be inside - for circle this is definitive
+                    // For shaped areas, check if tile is in the shape
+                    if (!sa.hasShape()) {
+                        inStart = true;
+                    } else {
+                        // Quick: if it's near enough, consider it "in start area" to avoid dense forest
+                        // right at the walls
+                        inStart = true;
+                    }
                     break;
                 }
             }

@@ -9,6 +9,7 @@
 struct GenerationParams {
     MapSize size = MapSize::Small;
     MapPattern pattern = MapPattern::Cell;
+    PlacementMode placement = PlacementMode::Circle;
     int numPlayers = 2;
     uint32_t seed = 12345;
     WaterParams water;

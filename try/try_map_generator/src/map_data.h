@@ -26,6 +26,15 @@ enum class MapPattern : int {
     COUNT
 };
 
+enum class PlacementMode : int {
+    Circle = 0,
+    Organic,
+    Voronoi,
+    Spiral,
+    Clustered,
+    COUNT
+};
+
 inline const char* MapPatternName(MapPattern p) {
     switch (p) {
         case MapPattern::Cell: return "Cell";
@@ -45,10 +54,30 @@ inline const char* MapSizeName(MapSize s) {
     }
 }
 
+inline const char* PlacementModeName(PlacementMode m) {
+    switch (m) {
+        case PlacementMode::Circle: return "Circle (Symmetric)";
+        case PlacementMode::Organic: return "Organic (Natural shapes)";
+        case PlacementMode::Voronoi: return "Voronoi (Territory cells)";
+        case PlacementMode::Spiral: return "Spiral (Golden ratio)";
+        case PlacementMode::Clustered: return "Clustered (Teams)";
+        default: return "Unknown";
+    }
+}
+
 struct StartingArea {
     int centerX, centerY;
     int radius;
     int playerIndex;
+
+    // Organic/Voronoi shape: per-tile mask of which tiles belong to this area
+    // If empty, use circular radius
+    std::vector<std::pair<int,int>> shapeTiles;
+
+    // Boundary tiles for wall building (Cell pattern)
+    std::vector<std::pair<int,int>> boundaryTiles;
+
+    bool hasShape() const { return !shapeTiles.empty(); }
 };
 
 class MapData {
@@ -72,6 +101,7 @@ public:
     bool inBounds(int x, int y) const;
 
     const std::vector<StartingArea>& getStartingAreas() const { return startingAreas_; }
+    std::vector<StartingArea>& getStartingAreasMut() { return startingAreas_; }
     void addStartingArea(const StartingArea& area);
     void clearStartingAreas();
 

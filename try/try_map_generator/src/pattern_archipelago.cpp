@@ -9,18 +9,23 @@
 #endif
 
 PatternArchipelago::PatternArchipelago(std::mt19937& rng, PerlinNoise& noise)
-    : rng_(rng), noise_(noise), fractal_(rng) {}
+    : rng_(rng), noise_(noise), fractal_(rng), placement_(rng, noise) {}
 
-void PatternArchipelago::generate(MapData& map, int numPlayers,
+void PatternArchipelago::generate(MapData& map, int numPlayers, PlacementMode placementMode,
                                    const WaterParams& waterParams,
                                    const MetalParams& metalParams) {
-    placeStartingAreas(map, numPlayers);
+    PlacementResult pr = placement_.place(map, numPlayers, placementMode);
+
+    for (auto& sa : pr.areas) {
+        map.addStartingArea(sa);
+        map.setTile(sa.centerX, sa.centerY, TileType::StartingPoint);
+    }
+
     generateTerrain(map, waterParams);
     ensureConnectivity(map);
     fillVegetation(map);
     placeMetalDeposits(map, metalParams);
 
-    // Archipelago also gets some extra river branches for flavor
     int extraRivers = std::max(0, (int)(waterParams.densityMultiplier * 0.5f));
     if (extraRivers > 0) {
         WaterParams reducedParams = waterParams;
@@ -30,40 +35,11 @@ void PatternArchipelago::generate(MapData& map, int numPlayers,
     }
 }
 
-void PatternArchipelago::placeStartingAreas(MapData& map, int numPlayers) {
-    int w = map.getWidth();
-    int h = map.getHeight();
-    float centerX = w / 2.0f;
-    float centerY = h / 2.0f;
-    float radius = std::min(w, h) * 0.35f;
-    int areaRadius = (int)(std::min(w, h) * 0.07f);
-    areaRadius = std::max(areaRadius, 25);
-
-    for (int i = 0; i < numPlayers; i++) {
-        float angle = 2.0f * (float)M_PI * i / numPlayers - (float)M_PI / 2.0f;
-        int cx = (int)(centerX + radius * std::cos(angle));
-        int cy = (int)(centerY + radius * std::sin(angle));
-        cx = std::clamp(cx, areaRadius + 10, w - areaRadius - 10);
-        cy = std::clamp(cy, areaRadius + 10, h - areaRadius - 10);
-
-        StartingArea sa;
-        sa.centerX = cx;
-        sa.centerY = cy;
-        sa.radius = areaRadius;
-        sa.playerIndex = i;
-        map.addStartingArea(sa);
-
-        map.setTile(cx, cy, TileType::StartingPoint);
-    }
-}
-
 void PatternArchipelago::generateTerrain(MapData& map, const WaterParams& waterParams) {
     int w = map.getWidth();
     int h = map.getHeight();
 
-    // Water threshold adjusted by water density
     float waterThreshold = -0.15f + (waterParams.densityMultiplier - 1.0f) * 0.12f;
-    // More density = higher threshold = more water
     waterThreshold = std::clamp(waterThreshold, -0.4f, 0.2f);
 
     float noiseScale = 6.0f * waterParams.widthMultiplier;
@@ -77,7 +53,6 @@ void PatternArchipelago::generateTerrain(MapData& map, const WaterParams& waterP
             float ny = (float)y / h;
             float n = (float)noise_.octaveNoise(nx * noiseScale, ny * noiseScale, 5, 0.5);
 
-            // Check proximity to starting areas - keep land nearby
             bool nearStart = false;
             for (auto& sa : map.getStartingAreas()) {
                 int dx = x - sa.centerX;

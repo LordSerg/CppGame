@@ -17,17 +17,20 @@ void MapGenerator::generate(MapData& map, const GenerationParams& params) {
     switch (params.pattern) {
         case MapPattern::Cell: {
             PatternCell cellGen(rng_, noise_);
-            cellGen.generate(map, params.numPlayers, params.water, params.metal);
+            cellGen.generate(map, params.numPlayers, params.placement,
+                             params.water, params.metal);
             break;
         }
         case MapPattern::Star: {
             PatternStar starGen(rng_, noise_);
-            starGen.generate(map, params.numPlayers, params.water, params.metal);
+            starGen.generate(map, params.numPlayers, params.placement,
+                             params.water, params.metal);
             break;
         }
         case MapPattern::Archipelago: {
             PatternArchipelago archGen(rng_, noise_);
-            archGen.generate(map, params.numPlayers, params.water, params.metal);
+            archGen.generate(map, params.numPlayers, params.placement,
+                             params.water, params.metal);
             break;
         }
         default:
