@@ -1,0 +1,164 @@
+#include "pattern_archipelago.h"
+#include "pathfinding.h"
+#include <cmath>
+#include <algorithm>
+#include <queue>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+PatternArchipelago::PatternArchipelago(std::mt19937& rng, PerlinNoise& noise)
+    : rng_(rng), noise_(noise), fractal_(rng) {}
+
+void PatternArchipelago::generate(MapData& map, int numPlayers) {
+    placeStartingAreas(map, numPlayers);
+    generateTerrain(map);
+    ensureConnectivity(map);
+    fillVegetation(map);
+    placeMetalDeposits(map);
+}
+
+void PatternArchipelago::placeStartingAreas(MapData& map, int numPlayers) {
+    int w = map.getWidth();
+    int h = map.getHeight();
+    float centerX = w / 2.0f;
+    float centerY = h / 2.0f;
+    float radius = std::min(w, h) * 0.35f;
+    int areaRadius = (int)(std::min(w, h) * 0.07f);
+    areaRadius = std::max(areaRadius, 25);
+
+    for (int i = 0; i < numPlayers; i++) {
+        float angle = 2.0f * M_PI * i / numPlayers - M_PI / 2.0f;
+        int cx = (int)(centerX + radius * std::cos(angle));
+        int cy = (int)(centerY + radius * std::sin(angle));
+        cx = std::clamp(cx, areaRadius + 10, w - areaRadius - 10);
+        cy = std::clamp(cy, areaRadius + 10, h - areaRadius - 10);
+
+        StartingArea sa;
+        sa.centerX = cx;
+        sa.centerY = cy;
+        sa.radius = areaRadius;
+        sa.playerIndex = i;
+        map.addStartingArea(sa);
+
+        map.setTile(cx, cy, TileType::StartingPoint);
+    }
+}
+
+void PatternArchipelago::generateTerrain(MapData& map) {
+    int w = map.getWidth();
+    int h = map.getHeight();
+
+    // Use noise to create water/land pattern
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            if (map.getTile(x, y) == TileType::StartingPoint) continue;
+
+            float nx = (float)x / w;
+            float ny = (float)y / h;
+            float n = (float)noise_.octaveNoise(nx * 6.0, ny * 6.0, 5, 0.5);
+
+            // Check proximity to starting areas
+            bool nearStart = false;
+            for (auto& sa : map.getStartingAreas()) {
+                int dx = x - sa.centerX;
+                int dy = y - sa.centerY;
+                float dist = std::sqrt((float)(dx * dx + dy * dy));
+                if (dist < sa.radius * 1.3f) {
+                    nearStart = true;
+                    break;
+                }
+            }
+
+            // Water threshold - keep areas near starts as land
+            if (!nearStart && n < -0.15f) {
+                map.setTile(x, y, TileType::Water);
+            }
+        }
+    }
+}
+
+void PatternArchipelago::ensureConnectivity(MapData& map) {
+    // Build land bridges between starting areas if needed
+    auto& areas = map.getStartingAreas();
+    int bridgeWidth = std::max(4, map.getWidth() / 200);
+
+    for (size_t i = 0; i < areas.size(); i++) {
+        size_t j = (i + 1) % areas.size();
+
+        // Carve a land bridge
+        float dx = (float)(areas[j].centerX - areas[i].centerX);
+        float dy = (float)(areas[j].centerY - areas[i].centerY);
+        float len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1.0f) continue;
+        dx /= len;
+        dy /= len;
+
+        float cx = (float)areas[i].centerX;
+        float cy = (float)areas[i].centerY;
+
+        std::uniform_real_distribution<float> wobble(-0.2f, 0.2f);
+
+        for (float t = 0; t < len; t += 1.0f) {
+            int ix = (int)cx;
+            int iy = (int)cy;
+            for (int oy = -bridgeWidth; oy <= bridgeWidth; oy++) {
+                for (int ox = -bridgeWidth; ox <= bridgeWidth; ox++) {
+                    if (ox * ox + oy * oy <= bridgeWidth * bridgeWidth) {
+                        int nx = ix + ox;
+                        int ny = iy + oy;
+                        if (map.inBounds(nx, ny) && map.getTile(nx, ny) == TileType::Water) {
+                            map.setTile(nx, ny, TileType::Ground);
+                        }
+                    }
+                }
+            }
+            cx += dx + wobble(rng_) * (-dy);
+            cy += dy + wobble(rng_) * dx;
+        }
+    }
+
+    fractal_.validateWaterConnectivity(map);
+}
+
+void PatternArchipelago::fillVegetation(MapData& map) {
+    int w = map.getWidth();
+    int h = map.getHeight();
+    std::uniform_real_distribution<float> prob(0.0f, 1.0f);
+
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            if (map.getTile(x, y) != TileType::Ground) continue;
+
+            bool inStartClear = false;
+            for (auto& sa : map.getStartingAreas()) {
+                int ddx = x - sa.centerX;
+                int ddy = y - sa.centerY;
+                if (ddx * ddx + ddy * ddy < (sa.radius / 2) * (sa.radius / 2)) {
+                    inStartClear = true;
+                    break;
+                }
+            }
+
+            if (!inStartClear) {
+                float n = (float)noise_.octaveNoise(x * 0.04, y * 0.04, 3);
+                if (n > -0.1f && prob(rng_) < 0.4f) {
+                    map.setTile(x, y, TileType::Tree);
+                }
+                // Some rocks scattered
+                if (n < -0.3f && prob(rng_) < 0.1f) {
+                    map.setTile(x, y, TileType::Rock);
+                }
+            }
+        }
+    }
+}
+
+void PatternArchipelago::placeMetalDeposits(MapData& map) {
+    for (auto& sa : map.getStartingAreas()) {
+        fractal_.generateMetalVeins(map, (float)sa.centerX, (float)sa.centerY,
+                                     (float)sa.radius * 0.8f, 0.8f, true);
+    }
+    fractal_.generateCommonMetalVeins(map, map.getStartingAreas());
+}

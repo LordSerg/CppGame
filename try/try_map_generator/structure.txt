@@ -1,0 +1,25 @@
+map_generator/
+├── CMakeLists.txt
+├── src/
+│   ├── main.cpp
+│   ├── app.h
+│   ├── app.cpp
+│   ├── map_generator.h
+│   ├── map_generator.cpp
+│   ├── map_data.h
+│   ├── map_data.cpp
+│   ├── renderer.h
+│   ├── renderer.cpp
+│   ├── noise.h
+│   ├── noise.cpp
+│   ├── fractal_generator.h
+│   ├── fractal_generator.cpp
+│   ├── pattern_cell.h
+│   ├── pattern_cell.cpp
+│   ├── pattern_star.h
+│   ├── pattern_star.cpp
+│   ├── pattern_archipelago.h
+│   ├── pattern_archipelago.cpp
+│   └── pathfinding.h
+└── external/
+    └── (imgui, glfw, glad fetched by CMake)
