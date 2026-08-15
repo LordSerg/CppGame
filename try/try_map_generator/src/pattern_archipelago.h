@@ -5,21 +5,20 @@
 #include "noise.h"
 #include <random>
 
-// Bonus pattern: "Archipelago" - players start on connected landmasses
-// with narrow land bridges, surrounded by scattered resources
 class PatternArchipelago {
 public:
     PatternArchipelago(std::mt19937& rng, PerlinNoise& noise);
-    void generate(MapData& map, int numPlayers);
+    void generate(MapData& map, int numPlayers,
+                  const WaterParams& waterParams, const MetalParams& metalParams);
 
 private:
     std::mt19937& rng_;
     PerlinNoise& noise_;
     FractalGenerator fractal_;
 
-    void generateTerrain(MapData& map);
+    void generateTerrain(MapData& map, const WaterParams& waterParams);
     void placeStartingAreas(MapData& map, int numPlayers);
     void ensureConnectivity(MapData& map);
     void fillVegetation(MapData& map);
-    void placeMetalDeposits(MapData& map);
+    void placeMetalDeposits(MapData& map, const MetalParams& params);
 };

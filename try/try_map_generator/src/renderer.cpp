@@ -16,10 +16,11 @@ uniform vec2 uViewport;
 out vec2 TexCoord;
 
 void main() {
-    vec2 pos = (aPos * uZoom + uOffset) / (uViewport * 0.5);
-    pos -= vec2(1.0, 1.0);
-    pos.y = -pos.y;
-    gl_Position = vec4(pos, 0.0, 1.0);
+    // Transform: world position -> screen pixel -> NDC
+    vec2 screenPos = aPos * uZoom + uOffset;
+    vec2 ndc = (screenPos / uViewport) * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    gl_Position = vec4(ndc, 0.0, 1.0);
     TexCoord = aTexCoord;
 }
 )";
@@ -37,10 +38,15 @@ void main() {
     vec4 mapColor = texture(uMapTex, TexCoord);
     if (uShowMetal) {
         float metal = texture(uMetalTex, TexCoord).r;
-        if (metal > 0.05) {
-            // Blend metal as orange/copper color over the map
-            vec3 metalColor = vec3(0.8, 0.5, 0.1) * metal;
-            mapColor.rgb = mix(mapColor.rgb, metalColor, metal * 0.8);
+        if (metal > 0.03) {
+            // Frozen underground river of metal: copper/amber glow
+            float glow = metal * metal; // nonlinear for more contrast
+            vec3 metalColor = mix(
+                vec3(0.6, 0.35, 0.05),  // dark copper
+                vec3(1.0, 0.7, 0.15),   // bright gold
+                glow
+            );
+            mapColor.rgb = mix(mapColor.rgb, metalColor, metal * 0.85);
         }
     }
     FragColor = mapColor;
@@ -50,7 +56,8 @@ void main() {
 Renderer::Renderer()
     : shaderProgram_(0), vao_(0), vbo_(0),
       mapTexture_(0), metalTexture_(0),
-      texWidth_(0), texHeight_(0) {}
+      texWidth_(0), texHeight_(0),
+      texturesDirty_(true), lastShowBarriers_(false) {}
 
 Renderer::~Renderer() {
     shutdown();
@@ -67,6 +74,10 @@ void Renderer::shutdown() {
     if (mapTexture_) { glDeleteTextures(1, &mapTexture_); mapTexture_ = 0; }
     if (metalTexture_) { glDeleteTextures(1, &metalTexture_); metalTexture_ = 0; }
     if (shaderProgram_) { glDeleteProgram(shaderProgram_); shaderProgram_ = 0; }
+}
+
+void Renderer::invalidateTextures() {
+    texturesDirty_ = true;
 }
 
 GLuint Renderer::compileShader(GLenum type, const char* source) {
@@ -106,7 +117,6 @@ void Renderer::createShaders() {
 }
 
 void Renderer::createBuffers() {
-    // Quad: position (x, y), texcoord (u, v)
     float vertices[] = {
         0.0f, 0.0f,  0.0f, 0.0f,
         1.0f, 0.0f,  1.0f, 0.0f,
@@ -136,9 +146,10 @@ void Renderer::updateMapTexture(const MapData& map, bool showBarriers) {
     int w = map.getWidth();
     int h = map.getHeight();
 
-    if (w != texWidth_ || h != texHeight_) {
-        if (mapTexture_) glDeleteTextures(1, &mapTexture_);
+    bool needsRealloc = (w != texWidth_ || h != texHeight_);
 
+    if (needsRealloc) {
+        if (mapTexture_) glDeleteTextures(1, &mapTexture_);
         glGenTextures(1, &mapTexture_);
         glBindTexture(GL_TEXTURE_2D, mapTexture_);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -151,16 +162,15 @@ void Renderer::updateMapTexture(const MapData& map, bool showBarriers) {
 
     std::vector<uint8_t> pixels(w * h * 4);
 
-    // Player colors for starting points
     static const uint8_t playerColors[8][3] = {
-        {255, 50, 50},    // Red
-        {50, 50, 255},    // Blue
-        {50, 255, 50},    // Green
-        {255, 255, 50},   // Yellow
-        {255, 128, 0},    // Orange
-        {200, 50, 200},   // Purple
-        {0, 255, 255},    // Cyan
-        {255, 180, 180},  // Pink
+        {255, 50, 50},
+        {50, 50, 255},
+        {50, 255, 50},
+        {255, 255, 50},
+        {255, 128, 0},
+        {200, 50, 200},
+        {0, 255, 255},
+        {255, 180, 180},
     };
 
     for (int y = 0; y < h; y++) {
@@ -173,20 +183,18 @@ void Renderer::updateMapTexture(const MapData& map, bool showBarriers) {
 
             switch (tile) {
                 case TileType::Ground:
-                    r = 139; g = 90; b = 43; // Brown
+                    r = 139; g = 90; b = 43;
                     break;
                 case TileType::Water:
-                    r = 30; g = 100; b = 200; // Blue
+                    r = 30; g = 100; b = 200;
                     break;
                 case TileType::Tree:
-                    // Green triangle symbolic - we use solid green
                     r = 34; g = 139; b = 34;
                     break;
                 case TileType::Rock:
-                    r = 150; g = 150; b = 150; // Gray
+                    r = 150; g = 150; b = 150;
                     break;
                 case TileType::StartingPoint: {
-                    // Find which player
                     int pi = 0;
                     for (auto& sa : map.getStartingAreas()) {
                         int dx = x - sa.centerX;
@@ -204,13 +212,27 @@ void Renderer::updateMapTexture(const MapData& map, bool showBarriers) {
                 }
             }
 
-            // Barrier overlay
+            // Expand starting point marker to be more visible
+            if (tile != TileType::StartingPoint) {
+                for (auto& sa : map.getStartingAreas()) {
+                    int dx = x - sa.centerX;
+                    int dy = y - sa.centerY;
+                    int markerSize = std::max(3, sa.radius / 8);
+                    if (dx * dx + dy * dy < markerSize * markerSize) {
+                        int pi = std::clamp(sa.playerIndex, 0, 7);
+                        r = playerColors[pi][0];
+                        g = playerColors[pi][1];
+                        b = playerColors[pi][2];
+                        break;
+                    }
+                }
+            }
+
             if (showBarriers && map.isBlocked(x, y)) {
-                // Tint blocked tiles red
-                r = (uint8_t)std::min(255, (int)r + 80);
-                g = (uint8_t)(g / 2);
-                b = (uint8_t)(b / 2);
-                a = 220;
+                r = (uint8_t)std::min(255, (int)r + 100);
+                g = (uint8_t)(g / 3);
+                b = (uint8_t)(b / 3);
+                a = 230;
             }
 
             pixels[idx + 0] = r;
@@ -253,18 +275,21 @@ void Renderer::renderMap(const MapData& map, float offsetX, float offsetY, float
                           float viewportWidth, float viewportHeight) {
     if (map.getWidth() == 0 || map.getHeight() == 0) return;
 
-    updateMapTexture(map, showBarriers);
-    updateMetalTexture(map);
+    // Update textures only when needed
+    if (texturesDirty_ || showBarriers != lastShowBarriers_) {
+        updateMapTexture(map, showBarriers);
+        updateMetalTexture(map);
+        texturesDirty_ = false;
+        lastShowBarriers_ = showBarriers;
+    }
 
     glUseProgram(shaderProgram_);
 
-    // Set uniforms
     glUniform2f(glGetUniformLocation(shaderProgram_, "uOffset"), offsetX, offsetY);
     glUniform1f(glGetUniformLocation(shaderProgram_, "uZoom"), zoom);
     glUniform2f(glGetUniformLocation(shaderProgram_, "uViewport"), viewportWidth, viewportHeight);
     glUniform1i(glGetUniformLocation(shaderProgram_, "uShowMetal"), showUnderground ? 1 : 0);
 
-    // Bind textures
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mapTexture_);
     glUniform1i(glGetUniformLocation(shaderProgram_, "uMapTex"), 0);
@@ -273,7 +298,6 @@ void Renderer::renderMap(const MapData& map, float offsetX, float offsetY, float
     glBindTexture(GL_TEXTURE_2D, metalTexture_);
     glUniform1i(glGetUniformLocation(shaderProgram_, "uMetalTex"), 1);
 
-    // Update quad to map dimensions
     float mapW = (float)map.getWidth();
     float mapH = (float)map.getHeight();
 

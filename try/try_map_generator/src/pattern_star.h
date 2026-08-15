@@ -8,7 +8,8 @@
 class PatternStar {
 public:
     PatternStar(std::mt19937& rng, PerlinNoise& noise);
-    void generate(MapData& map, int numPlayers);
+    void generate(MapData& map, int numPlayers,
+                  const WaterParams& waterParams, const MetalParams& metalParams);
 
 private:
     std::mt19937& rng_;
@@ -18,7 +19,7 @@ private:
     void placeStartingAreas(MapData& map, int numPlayers);
     void carvePaths(MapData& map);
     void fillForest(MapData& map);
-    void placeMetalDeposits(MapData& map);
+    void placeMetalDeposits(MapData& map, const MetalParams& params);
 
     void carvePath(MapData& map, int x1, int y1, int x2, int y2, int width);
 };

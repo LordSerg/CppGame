@@ -31,16 +31,17 @@ void FractalGenerator::carveRiverPoint(MapData& map, int cx, int cy, float width
 }
 
 void FractalGenerator::growRiverBranch(MapData& map, float x, float y, float angle,
-                                        float width, int depth, int maxDepth,
+                                        float width, float widthMul, int depth, int maxDepth,
+                                        float branchChance,
                                         std::vector<std::pair<int,int>>& waterTiles) {
-    if (depth >= maxDepth || width < 1.0f) return;
+    if (depth >= maxDepth || width < 0.8f) return;
 
     std::uniform_real_distribution<float> angleDist(-0.3f, 0.3f);
-    std::uniform_real_distribution<float> branchProb(0.0f, 1.0f);
+    std::uniform_real_distribution<float> prob(0.0f, 1.0f);
     std::uniform_real_distribution<float> branchAngle(0.4f, 1.2f);
 
     float stepSize = 2.0f;
-    int steps = (int)(std::max(20.0f, (float)map.getWidth() * 0.15f / (depth + 1)));
+    int steps = (int)(std::max(25.0f, (float)map.getWidth() * 0.18f / (depth + 1)));
 
     for (int i = 0; i < steps; i++) {
         int ix = (int)x;
@@ -57,29 +58,47 @@ void FractalGenerator::growRiverBranch(MapData& map, float x, float y, float ang
         x += std::cos(angle) * stepSize;
         y += std::sin(angle) * stepSize;
 
-        // Branch probability
-        if (branchProb(rng_) < 0.02f && depth < maxDepth - 1) {
-            float bAngle = angle + (branchProb(rng_) > 0.5f ? 1.0f : -1.0f) * branchAngle(rng_);
-            growRiverBranch(map, x, y, bAngle, width * 0.6f, depth + 1, maxDepth, waterTiles);
+        // Branch probability - scaled by branchChance
+        if (prob(rng_) < branchChance && depth < maxDepth - 1) {
+            float ba = angle + (prob(rng_) > 0.5f ? 1.0f : -1.0f) * branchAngle(rng_);
+            growRiverBranch(map, x, y, ba, width * 0.55f, widthMul,
+                            depth + 1, maxDepth, branchChance * 0.8f, waterTiles);
+        }
+
+        // Secondary smaller branch
+        if (prob(rng_) < branchChance * 0.5f && depth < maxDepth - 2) {
+            float ba = angle + (prob(rng_) > 0.5f ? 1.0f : -1.0f) * branchAngle(rng_) * 1.3f;
+            growRiverBranch(map, x, y, ba, width * 0.4f, widthMul,
+                            depth + 2, maxDepth, branchChance * 0.5f, waterTiles);
         }
 
         // Gradually reduce width
-        width *= 0.998f;
+        width *= 0.997f;
     }
 }
 
-void FractalGenerator::generateRiverSystem(MapData& map, int numSources) {
+void FractalGenerator::generateRiverSystem(MapData& map, int numBaseSources,
+                                            const WaterParams& params) {
     int w = map.getWidth();
     int h = map.getHeight();
     std::vector<std::pair<int,int>> waterTiles;
 
     std::uniform_int_distribution<int> edgeDist(0, 3);
-    std::uniform_real_distribution<float> posDist(0.1f, 0.9f);
+    std::uniform_real_distribution<float> posDist(0.05f, 0.95f);
+    std::uniform_real_distribution<float> angleDist(-0.5f, 0.5f);
 
-    float baseWidth = std::max(2.0f, w / 150.0f);
-    int maxDepth = 4;
+    float baseWidth = std::max(2.0f, w / 150.0f) * params.widthMultiplier;
+    int maxDepth = 5;
 
-    for (int s = 0; s < numSources; s++) {
+    int totalSources = (int)(numBaseSources * params.densityMultiplier) + params.extraSources;
+    totalSources = std::max(1, totalSources);
+
+    // Also add some interior river sources for more coverage
+    int interiorSources = std::max(0, totalSources / 3);
+    int edgeSources = totalSources - interiorSources;
+
+    // Edge-originating rivers
+    for (int s = 0; s < edgeSources; s++) {
         float sx, sy, angle;
         int edge = edgeDist(rng_);
 
@@ -87,12 +106,12 @@ void FractalGenerator::generateRiverSystem(MapData& map, int numSources) {
             case 0: // top
                 sx = posDist(rng_) * w;
                 sy = 0;
-                angle = M_PI / 2.0f;
+                angle = (float)M_PI / 2.0f;
                 break;
             case 1: // bottom
                 sx = posDist(rng_) * w;
-                sy = h - 1;
-                angle = -M_PI / 2.0f;
+                sy = (float)(h - 1);
+                angle = -(float)M_PI / 2.0f;
                 break;
             case 2: // left
                 sx = 0;
@@ -100,16 +119,47 @@ void FractalGenerator::generateRiverSystem(MapData& map, int numSources) {
                 angle = 0;
                 break;
             default: // right
-                sx = w - 1;
+                sx = (float)(w - 1);
                 sy = posDist(rng_) * h;
-                angle = M_PI;
+                angle = (float)M_PI;
                 break;
         }
 
-        std::uniform_real_distribution<float> ad(-0.5f, 0.5f);
-        angle += ad(rng_);
+        angle += angleDist(rng_);
+        float branchChance = 0.03f * params.densityMultiplier;
+        growRiverBranch(map, sx, sy, angle, baseWidth, params.widthMultiplier,
+                        0, maxDepth, branchChance, waterTiles);
+    }
 
-        growRiverBranch(map, sx, sy, angle, baseWidth, 0, maxDepth, waterTiles);
+    // Interior-originating rivers (flow outward from random interior points)
+    std::uniform_real_distribution<float> interiorPos(0.2f, 0.8f);
+    std::uniform_real_distribution<float> fullAngle(0.0f, 2.0f * (float)M_PI);
+    for (int s = 0; s < interiorSources; s++) {
+        float sx = interiorPos(rng_) * w;
+        float sy = interiorPos(rng_) * h;
+
+        // Check not inside a starting area
+        bool inStart = false;
+        for (auto& sa : map.getStartingAreas()) {
+            float dx = sx - sa.centerX;
+            float dy = sy - sa.centerY;
+            if (dx * dx + dy * dy < (sa.radius + 20) * (sa.radius + 20)) {
+                inStart = true;
+                break;
+            }
+        }
+        if (inStart) continue;
+
+        float angle = fullAngle(rng_);
+        float interiorWidth = baseWidth * 0.7f;
+        float branchChance = 0.04f * params.densityMultiplier;
+        growRiverBranch(map, sx, sy, angle, interiorWidth, params.widthMultiplier,
+                        0, maxDepth, branchChance, waterTiles);
+
+        // Second branch going roughly opposite direction
+        float angle2 = angle + (float)M_PI + angleDist(rng_);
+        growRiverBranch(map, sx, sy, angle2, interiorWidth * 0.8f, params.widthMultiplier,
+                        1, maxDepth, branchChance * 0.7f, waterTiles);
     }
 
     // Validate connectivity
@@ -139,7 +189,6 @@ void FractalGenerator::validateWaterConnectivity(MapData& map) {
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             if (map.getTile(x, y) != TileType::Water && component[y * w + x] == -1) {
-                // BFS
                 std::queue<std::pair<int,int>> q;
                 q.push({x, y});
                 component[y * w + x] = numComponents;
@@ -149,11 +198,11 @@ void FractalGenerator::validateWaterConnectivity(MapData& map) {
                     auto [cx, cy] = q.front(); q.pop();
                     sz++;
 
-                    int dx[] = {1, -1, 0, 0};
-                    int dy[] = {0, 0, 1, -1};
+                    int ddx[] = {1, -1, 0, 0};
+                    int ddy[] = {0, 0, 1, -1};
                     for (int d = 0; d < 4; d++) {
-                        int nx = cx + dx[d];
-                        int ny = cy + dy[d];
+                        int nx = cx + ddx[d];
+                        int ny = cy + ddy[d];
                         if (map.inBounds(nx, ny) && map.getTile(nx, ny) != TileType::Water
                             && component[ny * w + nx] == -1) {
                             component[ny * w + nx] = numComponents;
@@ -170,32 +219,61 @@ void FractalGenerator::validateWaterConnectivity(MapData& map) {
     if (numComponents <= 1) return;
 
     // Find the largest component
-    int largestComp = std::max_element(componentSizes.begin(), componentSizes.end()) - componentSizes.begin();
+    int largestComp = (int)(std::max_element(componentSizes.begin(), componentSizes.end()) - componentSizes.begin());
 
-    // Remove water tiles that separate smaller components from the largest
-    // Strategy: for each smaller component, find water tiles adjacent to it and remove them
-    // to create a corridor to the largest component
+    // For each smaller component, carve a corridor to the largest
+    // Use a smarter approach: find the closest pair of tiles between components
     for (int comp = 0; comp < numComponents; comp++) {
         if (comp == largestComp) continue;
+        if (componentSizes[comp] < 4) {
+            // Tiny isolated patch - just convert to water
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    if (component[y * w + x] == comp) {
+                        if (map.getTile(x, y) != TileType::StartingPoint)
+                            map.setTile(x, y, TileType::Water);
+                    }
+                }
+            }
+            continue;
+        }
 
-        // Find border water tiles between this component and largest
-        // Simple approach: remove water in a line between component centers
-        // Find a tile in this component and a tile in the largest
-        int sx = -1, sy = -1, tx = -1, ty = -1;
+        // Find a tile in this component and nearest tile in largest component
+        // Sample approach: find centroid of small comp, then BFS outward through water to find largest
+        int sx = -1, sy = -1;
+        long long sumX = 0, sumY = 0;
+        int cnt = 0;
         for (int y = 0; y < h && sx == -1; y++) {
             for (int x = 0; x < w && sx == -1; x++) {
-                if (component[y * w + x] == comp) { sx = x; sy = y; }
-            }
-        }
-        for (int y = 0; y < h && tx == -1; y++) {
-            for (int x = 0; x < w && tx == -1; x++) {
-                if (component[y * w + x] == largestComp) { tx = x; ty = y; }
+                if (component[y * w + x] == comp) {
+                    sumX += x; sumY += y; cnt++;
+                    if (sx == -1) { sx = x; sy = y; }
+                }
             }
         }
 
-        if (sx == -1 || tx == -1) continue;
+        // Find nearest tile in largest component to centroid
+        int centX = (int)(sumX / cnt);
+        int centY = (int)(sumY / cnt);
+        int tx = -1, ty = -1;
+        float bestDist = 1e18f;
+        // Sample instead of checking all
+        int sampleStep = std::max(1, w / 100);
+        for (int y = 0; y < h; y += sampleStep) {
+            for (int x = 0; x < w; x += sampleStep) {
+                if (component[y * w + x] == largestComp) {
+                    float dd = (float)((x - centX) * (x - centX) + (y - centY) * (y - centY));
+                    if (dd < bestDist) {
+                        bestDist = dd;
+                        tx = x; ty = y;
+                    }
+                }
+            }
+        }
 
-        // Bresenham line and remove water along it with small width
+        if (tx == -1) continue;
+
+        // Carve corridor from (sx, sy) toward (tx, ty)
         float dx = (float)(tx - sx);
         float dy = (float)(ty - sy);
         float len = std::sqrt(dx * dx + dy * dy);
@@ -203,7 +281,7 @@ void FractalGenerator::validateWaterConnectivity(MapData& map) {
 
         dx /= len; dy /= len;
         float cx = (float)sx, cy = (float)sy;
-        int corridorWidth = 3;
+        int corridorWidth = std::max(3, w / 300);
 
         for (float t = 0; t < len; t += 1.0f) {
             int ix = (int)cx;
@@ -241,15 +319,16 @@ void FractalGenerator::carveMetalPoint(MapData& map, int cx, int cy, float width
 }
 
 void FractalGenerator::growMetalVein(MapData& map, float x, float y, float angle,
-                                      float width, float intensity, int depth, int maxDepth) {
-    if (depth >= maxDepth || width < 0.5f) return;
+                                      float width, float intensity, float widthMul,
+                                      int depth, int maxDepth) {
+    if (depth >= maxDepth || width < 0.4f) return;
 
     std::uniform_real_distribution<float> angleDist(-0.4f, 0.4f);
-    std::uniform_real_distribution<float> branchProb(0.0f, 1.0f);
+    std::uniform_real_distribution<float> prob(0.0f, 1.0f);
     std::uniform_real_distribution<float> branchAngle(0.5f, 1.3f);
 
     float stepSize = 1.5f;
-    int steps = (int)(30.0f / (depth + 1) + 10);
+    int steps = (int)(35.0f / (depth + 1) + 12);
 
     for (int i = 0; i < steps; i++) {
         int ix = (int)x;
@@ -262,44 +341,67 @@ void FractalGenerator::growMetalVein(MapData& map, float x, float y, float angle
         x += std::cos(angle) * stepSize;
         y += std::sin(angle) * stepSize;
 
-        if (branchProb(rng_) < 0.08f && depth < maxDepth - 1) {
-            float ba = angle + (branchProb(rng_) > 0.5f ? 1.0f : -1.0f) * branchAngle(rng_);
-            growMetalVein(map, x, y, ba, width * 0.65f, intensity * 0.8f, depth + 1, maxDepth);
+        // Main branch
+        if (prob(rng_) < 0.1f && depth < maxDepth - 1) {
+            float ba = angle + (prob(rng_) > 0.5f ? 1.0f : -1.0f) * branchAngle(rng_);
+            growMetalVein(map, x, y, ba, width * 0.6f, intensity * 0.8f,
+                          widthMul, depth + 1, maxDepth);
         }
 
-        width *= 0.995f;
+        // Thin secondary tendrils
+        if (prob(rng_) < 0.05f && depth < maxDepth - 2) {
+            float ba = angle + (prob(rng_) > 0.5f ? 1.0f : -1.0f) * branchAngle(rng_) * 1.5f;
+            growMetalVein(map, x, y, ba, width * 0.35f, intensity * 0.6f,
+                          widthMul, depth + 2, maxDepth);
+        }
+
+        width *= 0.994f;
     }
 }
 
 void FractalGenerator::generateMetalVeins(MapData& map, float centerX, float centerY,
-                                            float radius, float intensity, bool isTangle) {
-    int numBranches = isTangle ? 5 : 2;
-    int maxDepth = isTangle ? 5 : 3;
-    float baseWidth = isTangle ? radius * 0.08f : radius * 0.05f;
-    baseWidth = std::max(baseWidth, 1.5f);
+                                            float radius, float intensity, bool isTangle,
+                                            const MetalParams& params) {
+    int numBranches = isTangle ? 6 : 3;
+    numBranches = (int)(numBranches * params.densityMultiplier);
+    numBranches = std::max(1, numBranches);
 
-    std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * M_PI);
-    std::uniform_real_distribution<float> offsetDist(-radius * 0.2f, radius * 0.2f);
+    int maxDepth = isTangle ? 6 : 4;
+    float baseWidth = isTangle ? radius * 0.1f : radius * 0.06f;
+    baseWidth = std::max(baseWidth, 1.5f);
+    baseWidth *= params.widthMultiplier;
+
+    float effectiveIntensity = intensity * params.intensityMultiplier;
+    effectiveIntensity = std::min(effectiveIntensity, 1.0f);
+
+    std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * (float)M_PI);
+    std::uniform_real_distribution<float> offsetDist(-radius * 0.25f, radius * 0.25f);
 
     for (int b = 0; b < numBranches; b++) {
         float angle = angleDist(rng_);
         float sx = centerX + offsetDist(rng_);
         float sy = centerY + offsetDist(rng_);
-        growMetalVein(map, sx, sy, angle, baseWidth, intensity, 0, maxDepth);
+        growMetalVein(map, sx, sy, angle, baseWidth, effectiveIntensity,
+                      params.widthMultiplier, 0, maxDepth);
     }
 }
 
-void FractalGenerator::generateCommonMetalVeins(MapData& map, const std::vector<StartingArea>& startAreas) {
+void FractalGenerator::generateCommonMetalVeins(MapData& map,
+                                                  const std::vector<StartingArea>& startAreas,
+                                                  const MetalParams& params) {
     int w = map.getWidth();
     int h = map.getHeight();
 
-    std::uniform_real_distribution<float> posDist(0.15f, 0.85f);
-    std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * M_PI);
+    std::uniform_real_distribution<float> posDist(0.1f, 0.9f);
 
-    int numVeins = std::max(3, w / 200);
-    float baseWidth = std::max(3.0f, w / 200.0f);
+    int numVeins = std::max(3, w / 180);
+    numVeins = (int)(numVeins * params.densityMultiplier) + params.extraVeins;
+    numVeins = std::max(2, numVeins);
 
-    for (int v = 0; v < numVeins; v++) {
+    int attempts = 0;
+    int placed = 0;
+    while (placed < numVeins && attempts < numVeins * 5) {
+        attempts++;
         float cx = posDist(rng_) * w;
         float cy = posDist(rng_) * h;
 
@@ -308,13 +410,26 @@ void FractalGenerator::generateCommonMetalVeins(MapData& map, const std::vector<
         for (auto& sa : startAreas) {
             float dx = cx - sa.centerX;
             float dy = cy - sa.centerY;
-            if (dx * dx + dy * dy < sa.radius * sa.radius) {
+            if (dx * dx + dy * dy < (float)(sa.radius * sa.radius)) {
                 inStart = true;
                 break;
             }
         }
-        if (inStart) { v--; continue; }
+        if (inStart) continue;
 
-        generateMetalVeins(map, cx, cy, w * 0.15f, 0.9f, true);
+        generateMetalVeins(map, cx, cy, w * 0.12f, 0.9f, true, params);
+        placed++;
+    }
+
+    // Add some long linear veins crossing the map for variety
+    std::uniform_real_distribution<float> fullAngle(0.0f, 2.0f * (float)M_PI);
+    int longVeins = std::max(1, (int)(params.densityMultiplier * 2));
+    for (int v = 0; v < longVeins; v++) {
+        float sx = posDist(rng_) * w;
+        float sy = posDist(rng_) * h;
+        float angle = fullAngle(rng_);
+        float veinWidth = std::max(1.5f, w / 300.0f) * params.widthMultiplier;
+        growMetalVein(map, sx, sy, angle, veinWidth, 0.7f * params.intensityMultiplier,
+                      params.widthMultiplier, 0, 4);
     }
 }

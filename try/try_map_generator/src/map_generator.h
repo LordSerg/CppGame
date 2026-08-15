@@ -1,16 +1,25 @@
 #pragma once
 
 #include "map_data.h"
+#include "fractal_generator.h"
 #include "noise.h"
 #include <random>
 #include <cstdint>
+
+struct GenerationParams {
+    MapSize size = MapSize::Small;
+    MapPattern pattern = MapPattern::Cell;
+    int numPlayers = 2;
+    uint32_t seed = 12345;
+    WaterParams water;
+    MetalParams metal;
+};
 
 class MapGenerator {
 public:
     MapGenerator();
 
-    void generate(MapData& map, MapSize size, MapPattern pattern,
-                  int numPlayers, uint32_t seed);
+    void generate(MapData& map, const GenerationParams& params);
 
     uint32_t getLastSeed() const { return lastSeed_; }
 

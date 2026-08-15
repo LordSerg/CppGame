@@ -9,14 +9,16 @@
 PatternStar::PatternStar(std::mt19937& rng, PerlinNoise& noise)
     : rng_(rng), noise_(noise), fractal_(rng) {}
 
-void PatternStar::generate(MapData& map, int numPlayers) {
+void PatternStar::generate(MapData& map, int numPlayers,
+                            const WaterParams& waterParams,
+                            const MetalParams& metalParams) {
     placeStartingAreas(map, numPlayers);
     fillForest(map);
     carvePaths(map);
-    placeMetalDeposits(map);
+    placeMetalDeposits(map, metalParams);
 
-    int riverCount = std::max(1, map.getWidth() / 600);
-    fractal_.generateRiverSystem(map, riverCount);
+    int riverCount = std::max(1, map.getWidth() / 500);
+    fractal_.generateRiverSystem(map, riverCount, waterParams);
 }
 
 void PatternStar::placeStartingAreas(MapData& map, int numPlayers) {
@@ -30,7 +32,7 @@ void PatternStar::placeStartingAreas(MapData& map, int numPlayers) {
     areaRadius = std::max(areaRadius, 25);
 
     for (int i = 0; i < numPlayers; i++) {
-        float angle = 2.0f * M_PI * i / numPlayers - M_PI / 2.0f;
+        float angle = 2.0f * (float)M_PI * i / numPlayers - (float)M_PI / 2.0f;
         int cx = (int)(centerX + radius * std::cos(angle));
         int cy = (int)(centerY + radius * std::sin(angle));
 
@@ -44,7 +46,6 @@ void PatternStar::placeStartingAreas(MapData& map, int numPlayers) {
         sa.playerIndex = i;
         map.addStartingArea(sa);
 
-        // Mark starting point and clear area
         map.setTile(cx, cy, TileType::StartingPoint);
 
         int clearRadius = areaRadius / 2;
@@ -72,11 +73,10 @@ void PatternStar::carvePath(MapData& map, int x1, int y1, int x2, int y2, int wi
 
     std::uniform_real_distribution<float> wobble(-0.3f, 0.3f);
 
-    float cx = (float)x1, cy = (float)y1;
     float perpX = -dy, perpY = dx;
+    float cx = (float)x1, cy = (float)y1;
 
     for (float t = 0; t < len; t += 1.0f) {
-        // Add some wobble
         float w = wobble(rng_);
         float px = cx + perpX * w * width;
         float py = cy + perpY * w * width;
@@ -135,7 +135,7 @@ void PatternStar::carvePaths(MapData& map) {
         }
     }
 
-    // Some extra winding paths between adjacent players
+    // Paths between adjacent players
     for (size_t i = 0; i < areas.size(); i++) {
         size_t j = (i + 1) % areas.size();
         int mx = (areas[i].centerX + areas[j].centerX) / 2;
@@ -174,10 +174,10 @@ void PatternStar::fillForest(MapData& map) {
     }
 }
 
-void PatternStar::placeMetalDeposits(MapData& map) {
+void PatternStar::placeMetalDeposits(MapData& map, const MetalParams& params) {
     for (auto& sa : map.getStartingAreas()) {
         fractal_.generateMetalVeins(map, (float)sa.centerX, (float)sa.centerY,
-                                     (float)sa.radius * 0.8f, 0.8f, true);
+                                     (float)sa.radius * 0.8f, 0.8f, true, params);
     }
-    fractal_.generateCommonMetalVeins(map, map.getStartingAreas());
+    fractal_.generateCommonMetalVeins(map, map.getStartingAreas(), params);
 }

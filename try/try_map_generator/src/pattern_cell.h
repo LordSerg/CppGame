@@ -8,7 +8,8 @@
 class PatternCell {
 public:
     PatternCell(std::mt19937& rng, PerlinNoise& noise);
-    void generate(MapData& map, int numPlayers);
+    void generate(MapData& map, int numPlayers,
+                  const WaterParams& waterParams, const MetalParams& metalParams);
 
 private:
     std::mt19937& rng_;
@@ -19,5 +20,5 @@ private:
     void buildRockWalls(MapData& map);
     void fillStartingAreaTrees(MapData& map);
     void fillCommonAreaForest(MapData& map);
-    void placeMetalDeposits(MapData& map);
+    void placeMetalDeposits(MapData& map, const MetalParams& params);
 };

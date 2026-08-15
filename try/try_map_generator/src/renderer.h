@@ -15,6 +15,9 @@ public:
                    bool showUnderground, bool showBarriers,
                    float viewportWidth, float viewportHeight);
 
+    // Call when map data changes to force texture rebuild
+    void invalidateTextures();
+
 private:
     GLuint shaderProgram_;
     GLuint vao_, vbo_;
@@ -22,6 +25,8 @@ private:
     GLuint metalTexture_;
 
     int texWidth_, texHeight_;
+    bool texturesDirty_;
+    bool lastShowBarriers_;
 
     void createShaders();
     void createBuffers();

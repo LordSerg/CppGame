@@ -11,12 +11,23 @@
 PatternArchipelago::PatternArchipelago(std::mt19937& rng, PerlinNoise& noise)
     : rng_(rng), noise_(noise), fractal_(rng) {}
 
-void PatternArchipelago::generate(MapData& map, int numPlayers) {
+void PatternArchipelago::generate(MapData& map, int numPlayers,
+                                   const WaterParams& waterParams,
+                                   const MetalParams& metalParams) {
     placeStartingAreas(map, numPlayers);
-    generateTerrain(map);
+    generateTerrain(map, waterParams);
     ensureConnectivity(map);
     fillVegetation(map);
-    placeMetalDeposits(map);
+    placeMetalDeposits(map, metalParams);
+
+    // Archipelago also gets some extra river branches for flavor
+    int extraRivers = std::max(0, (int)(waterParams.densityMultiplier * 0.5f));
+    if (extraRivers > 0) {
+        WaterParams reducedParams = waterParams;
+        reducedParams.densityMultiplier *= 0.3f;
+        reducedParams.widthMultiplier *= 0.6f;
+        fractal_.generateRiverSystem(map, extraRivers, reducedParams);
+    }
 }
 
 void PatternArchipelago::placeStartingAreas(MapData& map, int numPlayers) {
@@ -29,7 +40,7 @@ void PatternArchipelago::placeStartingAreas(MapData& map, int numPlayers) {
     areaRadius = std::max(areaRadius, 25);
 
     for (int i = 0; i < numPlayers; i++) {
-        float angle = 2.0f * M_PI * i / numPlayers - M_PI / 2.0f;
+        float angle = 2.0f * (float)M_PI * i / numPlayers - (float)M_PI / 2.0f;
         int cx = (int)(centerX + radius * std::cos(angle));
         int cy = (int)(centerY + radius * std::sin(angle));
         cx = std::clamp(cx, areaRadius + 10, w - areaRadius - 10);
@@ -46,20 +57,27 @@ void PatternArchipelago::placeStartingAreas(MapData& map, int numPlayers) {
     }
 }
 
-void PatternArchipelago::generateTerrain(MapData& map) {
+void PatternArchipelago::generateTerrain(MapData& map, const WaterParams& waterParams) {
     int w = map.getWidth();
     int h = map.getHeight();
 
-    // Use noise to create water/land pattern
+    // Water threshold adjusted by water density
+    float waterThreshold = -0.15f + (waterParams.densityMultiplier - 1.0f) * 0.12f;
+    // More density = higher threshold = more water
+    waterThreshold = std::clamp(waterThreshold, -0.4f, 0.2f);
+
+    float noiseScale = 6.0f * waterParams.widthMultiplier;
+    noiseScale = std::clamp(noiseScale, 3.0f, 15.0f);
+
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             if (map.getTile(x, y) == TileType::StartingPoint) continue;
 
             float nx = (float)x / w;
             float ny = (float)y / h;
-            float n = (float)noise_.octaveNoise(nx * 6.0, ny * 6.0, 5, 0.5);
+            float n = (float)noise_.octaveNoise(nx * noiseScale, ny * noiseScale, 5, 0.5);
 
-            // Check proximity to starting areas
+            // Check proximity to starting areas - keep land nearby
             bool nearStart = false;
             for (auto& sa : map.getStartingAreas()) {
                 int dx = x - sa.centerX;
@@ -71,8 +89,7 @@ void PatternArchipelago::generateTerrain(MapData& map) {
                 }
             }
 
-            // Water threshold - keep areas near starts as land
-            if (!nearStart && n < -0.15f) {
+            if (!nearStart && n < waterThreshold) {
                 map.setTile(x, y, TileType::Water);
             }
         }
@@ -80,14 +97,12 @@ void PatternArchipelago::generateTerrain(MapData& map) {
 }
 
 void PatternArchipelago::ensureConnectivity(MapData& map) {
-    // Build land bridges between starting areas if needed
     auto& areas = map.getStartingAreas();
     int bridgeWidth = std::max(4, map.getWidth() / 200);
 
     for (size_t i = 0; i < areas.size(); i++) {
         size_t j = (i + 1) % areas.size();
 
-        // Carve a land bridge
         float dx = (float)(areas[j].centerX - areas[i].centerX);
         float dy = (float)(areas[j].centerY - areas[i].centerY);
         float len = std::sqrt(dx * dx + dy * dy);
@@ -146,7 +161,6 @@ void PatternArchipelago::fillVegetation(MapData& map) {
                 if (n > -0.1f && prob(rng_) < 0.4f) {
                     map.setTile(x, y, TileType::Tree);
                 }
-                // Some rocks scattered
                 if (n < -0.3f && prob(rng_) < 0.1f) {
                     map.setTile(x, y, TileType::Rock);
                 }
@@ -155,10 +169,10 @@ void PatternArchipelago::fillVegetation(MapData& map) {
     }
 }
 
-void PatternArchipelago::placeMetalDeposits(MapData& map) {
+void PatternArchipelago::placeMetalDeposits(MapData& map, const MetalParams& params) {
     for (auto& sa : map.getStartingAreas()) {
         fractal_.generateMetalVeins(map, (float)sa.centerX, (float)sa.centerY,
-                                     (float)sa.radius * 0.8f, 0.8f, true);
+                                     (float)sa.radius * 0.8f, 0.8f, true, params);
     }
-    fractal_.generateCommonMetalVeins(map, map.getStartingAreas());
+    fractal_.generateCommonMetalVeins(map, map.getStartingAreas(), params);
 }

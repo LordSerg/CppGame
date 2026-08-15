@@ -9,16 +9,17 @@
 PatternCell::PatternCell(std::mt19937& rng, PerlinNoise& noise)
     : rng_(rng), noise_(noise), fractal_(rng) {}
 
-void PatternCell::generate(MapData& map, int numPlayers) {
+void PatternCell::generate(MapData& map, int numPlayers,
+                            const WaterParams& waterParams,
+                            const MetalParams& metalParams) {
     placeStartingAreas(map, numPlayers);
     buildRockWalls(map);
     fillStartingAreaTrees(map);
     fillCommonAreaForest(map);
-    placeMetalDeposits(map);
+    placeMetalDeposits(map, metalParams);
 
-    // Generate rivers in common area
-    int riverCount = std::max(1, map.getWidth() / 500);
-    fractal_.generateRiverSystem(map, riverCount);
+    int riverCount = std::max(1, map.getWidth() / 400);
+    fractal_.generateRiverSystem(map, riverCount, waterParams);
 }
 
 void PatternCell::placeStartingAreas(MapData& map, int numPlayers) {
@@ -32,7 +33,7 @@ void PatternCell::placeStartingAreas(MapData& map, int numPlayers) {
     areaRadius = std::max(areaRadius, 30);
 
     for (int i = 0; i < numPlayers; i++) {
-        float angle = 2.0f * M_PI * i / numPlayers - M_PI / 2.0f;
+        float angle = 2.0f * (float)M_PI * i / numPlayers - (float)M_PI / 2.0f;
         int cx = (int)(centerX + radius * std::cos(angle));
         int cy = (int)(centerY + radius * std::sin(angle));
 
@@ -46,10 +47,8 @@ void PatternCell::placeStartingAreas(MapData& map, int numPlayers) {
         sa.playerIndex = i;
         map.addStartingArea(sa);
 
-        // Mark starting point
         map.setTile(cx, cy, TileType::StartingPoint);
 
-        // Clear starting area
         int clearRadius = areaRadius / 3;
         for (int dy = -clearRadius; dy <= clearRadius; dy++) {
             for (int dx = -clearRadius; dx <= clearRadius; dx++) {
@@ -119,7 +118,6 @@ void PatternCell::fillCommonAreaForest(MapData& map) {
         for (int x = 0; x < w; x++) {
             if (map.getTile(x, y) != TileType::Ground) continue;
 
-            // Check if in any starting area
             bool inStart = false;
             for (auto& sa : map.getStartingAreas()) {
                 int dx = x - sa.centerX;
@@ -140,13 +138,10 @@ void PatternCell::fillCommonAreaForest(MapData& map) {
     }
 }
 
-void PatternCell::placeMetalDeposits(MapData& map) {
-    // Metal in each starting area
+void PatternCell::placeMetalDeposits(MapData& map, const MetalParams& params) {
     for (auto& sa : map.getStartingAreas()) {
         fractal_.generateMetalVeins(map, (float)sa.centerX, (float)sa.centerY,
-                                     (float)sa.radius * 0.8f, 0.8f, true);
+                                     (float)sa.radius * 0.8f, 0.8f, true, params);
     }
-
-    // Rich metal in common area
-    fractal_.generateCommonMetalVeins(map, map.getStartingAreas());
+    fractal_.generateCommonMetalVeins(map, map.getStartingAreas(), params);
 }

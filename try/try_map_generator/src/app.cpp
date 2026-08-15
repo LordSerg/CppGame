@@ -8,14 +8,19 @@
 #include <ctime>
 #include <random>
 #include <string>
+#include <algorithm>
 
 App::App()
     : window_(nullptr), windowWidth_(1280), windowHeight_(720),
       currentPattern_(0), currentSize_(0), numPlayers_(2),
-      currentSeed_(12345), showUnderground_(false), showBarriers_(false),
+      currentSeed_(12345),
+      waterDensity_(1.0f), waterWidth_(1.0f),
+      metalDensity_(1.0f), metalWidth_(1.0f),
+      showUnderground_(false), showBarriers_(false),
       mapGenerated_(false),
       camOffsetX_(0), camOffsetY_(0), camZoom_(1.0f),
-      isDragging_(false), lastMouseX_(0), lastMouseY_(0) {
+      isDragging_(false), lastMouseX_(0), lastMouseY_(0),
+      camMoveSpeed_(400.0f) {
     snprintf(seedText_, sizeof(seedText_), "%u", currentSeed_);
 }
 
@@ -23,20 +28,33 @@ App::~App() {
     shutdown();
 }
 
+void App::zoomAtScreenPoint(float screenX, float screenY, float zoomDelta) {
+    // Convert screen point to world coordinates before zoom
+    float worldX = (screenX - camOffsetX_) / camZoom_;
+    float worldY = (screenY - camOffsetY_) / camZoom_;
+
+    // Apply zoom
+    float oldZoom = camZoom_;
+    camZoom_ *= zoomDelta;
+    camZoom_ = std::clamp(camZoom_, 0.02f, 30.0f);
+
+    // Adjust offset so worldX, worldY stays at the same screen position
+    camOffsetX_ = screenX - worldX * camZoom_;
+    camOffsetY_ = screenY - worldY * camZoom_;
+}
+
 void App::scrollCallback(GLFWwindow* window, double /*xoffset*/, double yoffset) {
     App* app = (App*)glfwGetWindowUserPointer(window);
     if (!app) return;
 
-    // Don't zoom if ImGui wants the mouse
     if (ImGui::GetIO().WantCaptureMouse) return;
 
-    float zoomFactor = 1.1f;
-    if (yoffset > 0) {
-        app->camZoom_ *= zoomFactor;
-    } else {
-        app->camZoom_ /= zoomFactor;
-    }
-    app->camZoom_ = std::max(0.05f, std::min(app->camZoom_, 20.0f));
+    // Zoom toward center of window
+    float centerX = (float)app->windowWidth_ * 0.5f;
+    float centerY = (float)app->windowHeight_ * 0.5f;
+
+    float zoomFactor = (yoffset > 0) ? 1.12f : (1.0f / 1.12f);
+    app->zoomAtScreenPoint(centerX, centerY, zoomFactor);
 }
 
 bool App::init(int width, int height, const char* title) {
@@ -73,7 +91,6 @@ bool App::init(int width, int height, const char* title) {
         return false;
     }
 
-    // Init ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -94,7 +111,70 @@ void App::rerollSeed() {
     snprintf(seedText_, sizeof(seedText_), "%u", currentSeed_);
 }
 
-void App::processInput() {
+void App::centerCameraOnMap() {
+    if (!mapGenerated_) return;
+
+    float mapW = (float)mapData_.getWidth();
+    float mapH = (float)mapData_.getHeight();
+
+    // Fit map to window with some margin
+    float scaleX = (float)(windowWidth_ - 20) / mapW;
+    float scaleY = (float)(windowHeight_ - 20) / mapH;
+    camZoom_ = std::min(scaleX, scaleY) * 0.9f;
+
+    // Center the map in window
+    float renderedW = mapW * camZoom_;
+    float renderedH = mapH * camZoom_;
+    camOffsetX_ = ((float)windowWidth_ - renderedW) * 0.5f;
+    camOffsetY_ = ((float)windowHeight_ - renderedH) * 0.5f;
+}
+
+void App::processInput(float deltaTime) {
+    // Keyboard camera movement (WASD / Arrow keys)
+    // Only when ImGui doesn't want keyboard input
+    if (!ImGui::GetIO().WantCaptureKeyboard) {
+        float moveAmount = camMoveSpeed_ * deltaTime / camZoom_;
+        // Scale move speed with zoom so it feels consistent
+        float pixelMove = camMoveSpeed_ * deltaTime;
+
+        if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS ||
+            glfwGetKey(window_, GLFW_KEY_UP) == GLFW_PRESS) {
+            camOffsetY_ += pixelMove;
+        }
+        if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS ||
+            glfwGetKey(window_, GLFW_KEY_DOWN) == GLFW_PRESS) {
+            camOffsetY_ -= pixelMove;
+        }
+        if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS ||
+            glfwGetKey(window_, GLFW_KEY_LEFT) == GLFW_PRESS) {
+            camOffsetX_ += pixelMove;
+        }
+        if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS ||
+            glfwGetKey(window_, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+            camOffsetX_ -= pixelMove;
+        }
+
+        // Keyboard zoom: + / - or Q / E
+        if (glfwGetKey(window_, GLFW_KEY_EQUAL) == GLFW_PRESS ||
+            glfwGetKey(window_, GLFW_KEY_E) == GLFW_PRESS) {
+            float centerX = (float)windowWidth_ * 0.5f;
+            float centerY = (float)windowHeight_ * 0.5f;
+            zoomAtScreenPoint(centerX, centerY, 1.0f + 1.5f * deltaTime);
+        }
+        if (glfwGetKey(window_, GLFW_KEY_MINUS) == GLFW_PRESS ||
+            glfwGetKey(window_, GLFW_KEY_Q) == GLFW_PRESS) {
+            float centerX = (float)windowWidth_ * 0.5f;
+            float centerY = (float)windowHeight_ * 0.5f;
+            zoomAtScreenPoint(centerX, centerY, 1.0f - 1.5f * deltaTime);
+        }
+
+        // Home key to reset view
+        if (glfwGetKey(window_, GLFW_KEY_HOME) == GLFW_PRESS) {
+            centerCameraOnMap();
+        }
+    }
+
+    // Mouse drag
     if (ImGui::GetIO().WantCaptureMouse) {
         isDragging_ = false;
         return;
@@ -127,6 +207,23 @@ void App::renderUI() {
     const char* patterns[] = {"Cell", "Star", "Archipelago"};
     ImGui::Combo("Map Pattern", &currentPattern_, patterns, IM_ARRAYSIZE(patterns));
 
+    // Show pattern description
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+    switch (currentPattern_) {
+        case 0:
+            ImGui::TextWrapped("Cell: Players in rock-walled enclosures. Break out to access common forest.");
+            break;
+        case 1:
+            ImGui::TextWrapped("Star: Players on edges, paths radiate to center clearing through forest.");
+            break;
+        case 2:
+            ImGui::TextWrapped("Archipelago: Noise-based water terrain with land bridges connecting players.");
+            break;
+    }
+    ImGui::PopStyleColor();
+
+    ImGui::Separator();
+
     // Size selection
     const char* sizes[] = {"Small (500x500)", "Mid (1000x1000)", "Big (2000x2000)", "Mammoth (4000x4000)"};
     ImGui::Combo("Map Size", &currentSize_, sizes, IM_ARRAYSIZE(sizes));
@@ -138,90 +235,169 @@ void App::renderUI() {
     ImGui::Separator();
     ImGui::Text("Seed:");
     ImGui::PushItemWidth(150);
-    ImGui::InputText("##seed", seedText_, sizeof(seedText_));
+    if (ImGui::InputText("##seed", seedText_, sizeof(seedText_),
+                          ImGuiInputTextFlags_CharsDecimal)) {
+        // User edited seed text
+    }
     ImGui::PopItemWidth();
     ImGui::SameLine();
     if (ImGui::Button("Reroll")) {
         rerollSeed();
     }
 
+    // Water controls
+    ImGui::Separator();
+    ImGui::Text("Water (Rivers):");
+    ImGui::SliderFloat("River Density", &waterDensity_, 0.2f, 4.0f, "%.1f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Number of river sources and branch frequency");
+    ImGui::SliderFloat("River Width", &waterWidth_, 0.3f, 4.0f, "%.1f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Thickness of river channels");
+
+    // Metal controls
+    ImGui::Separator();
+    ImGui::Text("Metal (Underground Veins):");
+    ImGui::SliderFloat("Vein Density", &metalDensity_, 0.3f, 4.0f, "%.1f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Number of metal vein clusters and branch frequency");
+    ImGui::SliderFloat("Vein Width", &metalWidth_, 0.3f, 4.0f, "%.1f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Thickness of underground metal veins");
+
     // Generate button
     ImGui::Separator();
-    if (ImGui::Button("Generate", ImVec2(200, 40))) {
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.5f, 0.15f, 1.0f));
+    if (ImGui::Button("Generate Map", ImVec2(220, 45))) {
         currentSeed_ = (uint32_t)strtoul(seedText_, nullptr, 10);
 
-        MapSize mapSize;
+        GenerationParams params;
         switch (currentSize_) {
-            case 0: mapSize = MapSize::Small; break;
-            case 1: mapSize = MapSize::Mid; break;
-            case 2: mapSize = MapSize::Big; break;
-            case 3: mapSize = MapSize::Mammoth; break;
-            default: mapSize = MapSize::Small;
+            case 0: params.size = MapSize::Small; break;
+            case 1: params.size = MapSize::Mid; break;
+            case 2: params.size = MapSize::Big; break;
+            case 3: params.size = MapSize::Mammoth; break;
+            default: params.size = MapSize::Small;
         }
 
-        MapPattern pattern = (MapPattern)currentPattern_;
-        generator_.generate(mapData_, mapSize, pattern, numPlayers_, currentSeed_);
-        mapGenerated_ = true;
+        params.pattern = (MapPattern)currentPattern_;
+        params.numPlayers = numPlayers_;
+        params.seed = currentSeed_;
 
-        // Reset camera to fit map
-        camZoom_ = std::min(
-            (float)(windowWidth_ - 250) / mapData_.getWidth(),
-            (float)windowHeight_ / mapData_.getHeight()
-        ) * 0.9f;
-        camOffsetX_ = 120.0f;
-        camOffsetY_ = 10.0f;
+        params.water.densityMultiplier = waterDensity_;
+        params.water.widthMultiplier = waterWidth_;
+
+        params.metal.densityMultiplier = metalDensity_;
+        params.metal.widthMultiplier = metalWidth_;
+        params.metal.intensityMultiplier = 1.0f;
+
+        generator_.generate(mapData_, params);
+        mapGenerated_ = true;
+        renderer_.invalidateTextures();
+
+        centerCameraOnMap();
     }
+    ImGui::PopStyleColor(3);
+
+    // Quick regenerate with new random seed
+    ImGui::SameLine();
+    if (ImGui::Button("Quick\nReroll", ImVec2(70, 45))) {
+        rerollSeed();
+        currentSeed_ = (uint32_t)strtoul(seedText_, nullptr, 10);
+
+        GenerationParams params;
+        switch (currentSize_) {
+            case 0: params.size = MapSize::Small; break;
+            case 1: params.size = MapSize::Mid; break;
+            case 2: params.size = MapSize::Big; break;
+            case 3: params.size = MapSize::Mammoth; break;
+            default: params.size = MapSize::Small;
+        }
+
+        params.pattern = (MapPattern)currentPattern_;
+        params.numPlayers = numPlayers_;
+        params.seed = currentSeed_;
+        params.water.densityMultiplier = waterDensity_;
+        params.water.widthMultiplier = waterWidth_;
+        params.metal.densityMultiplier = metalDensity_;
+        params.metal.widthMultiplier = metalWidth_;
+        params.metal.intensityMultiplier = 1.0f;
+
+        generator_.generate(mapData_, params);
+        mapGenerated_ = true;
+        renderer_.invalidateTextures();
+        centerCameraOnMap();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Reroll seed and regenerate immediately");
 
     // View controls
     ImGui::Separator();
     ImGui::Text("View Options:");
-    ImGui::Checkbox("Show Underground (Metal)", &showUnderground_);
-    ImGui::Checkbox("Show Barriers", &showBarriers_);
+    if (ImGui::Checkbox("Show Underground (Metal Veins)", &showUnderground_)) {
+        // No regeneration needed, just re-render
+    }
+    if (ImGui::Checkbox("Show Barriers (Blocked Tiles)", &showBarriers_)) {
+        renderer_.invalidateTextures();
+    }
 
     // Camera controls
     ImGui::Separator();
-    ImGui::Text("Camera:");
-    ImGui::Text("Zoom: %.2fx", camZoom_);
+    ImGui::Text("Camera: Zoom %.2fx", camZoom_);
+    ImGui::SliderFloat("Move Speed", &camMoveSpeed_, 100.0f, 2000.0f, "%.0f px/s");
     if (ImGui::Button("Reset View")) {
-        if (mapGenerated_) {
-            camZoom_ = std::min(
-                (float)(windowWidth_ - 250) / mapData_.getWidth(),
-                (float)windowHeight_ / mapData_.getHeight()
-            ) * 0.9f;
-            camOffsetX_ = 120.0f;
-            camOffsetY_ = 10.0f;
-        }
+        centerCameraOnMap();
     }
-    ImGui::Text("Drag: LMB/MMB | Zoom: Scroll");
+
+    ImGui::Separator();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+    ImGui::Text("Navigation:");
+    ImGui::BulletText("WASD / Arrows: Pan");
+    ImGui::BulletText("Q / E or +/-: Zoom");
+    ImGui::BulletText("Mouse drag: Pan");
+    ImGui::BulletText("Scroll wheel: Zoom to center");
+    ImGui::BulletText("Home: Reset view");
+    ImGui::PopStyleColor();
 
     // Info
     if (mapGenerated_) {
         ImGui::Separator();
         ImGui::Text("Map: %dx%d", mapData_.getWidth(), mapData_.getHeight());
-        ImGui::Text("Starting areas: %d", (int)mapData_.getStartingAreas().size());
+        ImGui::Text("Players: %d", (int)mapData_.getStartingAreas().size());
+        ImGui::Text("Seed: %u", currentSeed_);
 
         // Legend
         ImGui::Separator();
         ImGui::Text("Legend:");
         ImGui::TextColored(ImVec4(0.55f, 0.35f, 0.17f, 1.0f), "  Brown = Ground");
-        ImGui::TextColored(ImVec4(0.13f, 0.55f, 0.13f, 1.0f), "  Green = Trees");
-        ImGui::TextColored(ImVec4(0.59f, 0.59f, 0.59f, 1.0f), "  Gray = Rocks");
-        ImGui::TextColored(ImVec4(0.12f, 0.39f, 0.78f, 1.0f), "  Blue = Water");
-        ImGui::TextColored(ImVec4(0.8f, 0.5f, 0.1f, 1.0f),    "  Orange = Metal (underground)");
-        ImGui::Text("  Colored dots = Player starts");
+        ImGui::TextColored(ImVec4(0.13f, 0.55f, 0.13f, 1.0f), "  Green = Trees (removable barrier)");
+        ImGui::TextColored(ImVec4(0.59f, 0.59f, 0.59f, 1.0f), "  Gray = Rocks (removable barrier)");
+        ImGui::TextColored(ImVec4(0.12f, 0.39f, 0.78f, 1.0f), "  Blue = Water (permanent barrier)");
+        ImGui::TextColored(ImVec4(0.8f, 0.5f, 0.1f, 1.0f),    "  Orange = Metal veins (underground)");
+        ImGui::Text("  Colored dots = Player starting points");
     }
 
     ImGui::End();
 }
 
 void App::run() {
+    double lastTime = glfwGetTime();
+
     while (!glfwWindowShouldClose(window_)) {
+        double currentTime = glfwGetTime();
+        float deltaTime = (float)(currentTime - lastTime);
+        lastTime = currentTime;
+        // Clamp delta to prevent huge jumps
+        deltaTime = std::min(deltaTime, 0.05f);
+
         glfwPollEvents();
-        processInput();
+        processInput(deltaTime);
 
         glfwGetFramebufferSize(window_, &windowWidth_, &windowHeight_);
         glViewport(0, 0, windowWidth_, windowHeight_);
-        glClearColor(0.15f, 0.15f, 0.15f, 1.0f);
+        glClearColor(0.12f, 0.12f, 0.14f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
         // Render map
